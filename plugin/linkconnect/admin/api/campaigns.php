@@ -1,0 +1,125 @@
+<?php
+require_once __DIR__ . '/_common.php';
+
+$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+
+if ($method === 'GET') {
+    lc_api_require_admin();
+
+    if (function_exists('lc_campaign_promo_guide_db_ensure_schema')) {
+        lc_campaign_promo_guide_db_ensure_schema();
+    }
+
+    // onoffcpa: 링크커넥트 예약 독립 도메인(air911 등)을 로컬 DB에서 분리 (LC 연결은 유지)
+    if (function_exists('lc_campaign_detach_linkconnect_tracking_domains')) {
+        lc_campaign_detach_linkconnect_tracking_domains();
+    }
+
+    // hasugu_cpa / modemo 행이 없을 때만 생성. 기존 행의 단가·문구는 덮어쓰지 않음.
+    if (lc_db_installed() && function_exists('lc_campaign_ensure_hasugu_cpa')) {
+        $cp_table = lc_table('campaigns');
+        $hasugu = lc_sql_fetch(" SELECT cp_id FROM `{$cp_table}` WHERE cp_code = 'CPA-HASUGU' LIMIT 1 ", false);
+        if (!$hasugu) {
+            lc_campaign_ensure_hasugu_cpa(array('activate' => true));
+        }
+    }
+    if (lc_db_installed() && function_exists('lc_campaign_ensure_modemo')) {
+        $cp_table = lc_table('campaigns');
+        $modemo = lc_sql_fetch(" SELECT cp_id FROM `{$cp_table}` WHERE cp_code = 'CPA-MODEMO' LIMIT 1 ", false);
+        if (!$modemo) {
+            lc_campaign_ensure_modemo(array('activate' => true));
+        }
+    }
+
+    $filters = array(
+        'status'   => isset($_GET['status']) ? (string) $_GET['status'] : '',
+        'category' => isset($_GET['category']) ? (string) $_GET['category'] : '',
+        'q'        => isset($_GET['q']) ? (string) $_GET['q'] : '',
+    );
+
+    lc_api_success(array(
+        'items'   => lc_campaign_admin_for_api($filters),
+        'summary' => lc_campaign_admin_summary(),
+        'dbReady' => lc_db_installed(),
+    ));
+}
+
+if ($method === 'POST') {
+    lc_api_require_admin();
+    lc_api_require_method('POST');
+
+    if (!lc_db_installed()) {
+        lc_api_error('DB가 설치되지 않았습니다.', 'DB_NOT_READY', 400);
+    }
+
+    $body = lc_api_read_json_body();
+    $action = isset($body['action']) ? (string) $body['action'] : 'save';
+    $cp_id = isset($body['cpId']) ? (int) $body['cpId'] : 0;
+
+    if ($action === 'save' || $action === 'create' || $action === 'update') {
+        if ($action === 'update' && $cp_id <= 0) {
+            lc_api_error('캠페인 ID가 필요합니다.', 'INVALID_REQUEST', 400);
+        }
+
+        $result = lc_campaign_save($body, $action === 'create' ? 0 : $cp_id);
+        if (!$result['ok']) {
+            lc_api_error($result['message'], 'SAVE_FAILED', 400);
+        }
+
+        lc_api_success(array(
+            'message'  => $result['message'],
+            'campaign' => $result['campaign'],
+        ));
+    }
+
+    $status_map = array(
+        'activate' => LC_STATUS_ACTIVE,
+        'pause'    => 'paused',
+        'end'      => 'ended',
+        'draft'    => LC_STATUS_DRAFT,
+    );
+
+    if (isset($status_map[$action])) {
+        if ($cp_id <= 0) {
+            lc_api_error('캠페인 ID가 필요합니다.', 'INVALID_REQUEST', 400);
+        }
+
+        $result = lc_campaign_update_status($cp_id, $status_map[$action]);
+        if (!$result['ok']) {
+            lc_api_error($result['message'], 'UPDATE_FAILED', 400);
+        }
+
+        lc_api_success(array(
+            'message'  => $result['message'],
+            'campaign' => $result['campaign'],
+        ));
+    }
+
+    if ($action === 'delete') {
+        if (!lc_is_super_admin()) {
+            lc_api_error('삭제 권한이 없습니다.', 'FORBIDDEN', 403);
+        }
+
+        if ($cp_id <= 0) {
+            lc_api_error('캠페인 ID가 필요합니다.', 'INVALID_REQUEST', 400);
+        }
+
+        $confirm = isset($body['confirm']) ? trim((string) $body['confirm']) : '';
+        if ($confirm !== '삭제') {
+            lc_api_error('삭제를 확인하려면 "삭제"를 입력해주세요.', 'CONFIRM_REQUIRED', 400);
+        }
+
+        $result = lc_campaign_delete($cp_id);
+        if (!$result['ok']) {
+            lc_api_error($result['message'], 'DELETE_FAILED', 400);
+        }
+
+        lc_api_success(array(
+            'message' => $result['message'],
+        ));
+    }
+
+    lc_api_error('유효하지 않은 action입니다.', 'INVALID_ACTION', 400);
+}
+
+lc_api_error('허용되지 않은 메서드입니다.', 'METHOD_NOT_ALLOWED', 405);

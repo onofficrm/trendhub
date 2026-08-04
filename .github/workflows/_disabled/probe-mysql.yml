@@ -1,0 +1,65 @@
+name: Probe MySQL connect
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Upload and run DB probe
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_PORT: ${{ secrets.FTP_PORT }}
+        run: |
+          cat > probe.php << 'EOF'
+          <?php
+          header('Content-Type: text/plain; charset=utf-8');
+          error_reporting(E_ALL);
+          ini_set('display_errors', '1');
+          define('_GNUBOARD_', true);
+          $dbconfig = __DIR__ . '/data/dbconfig.php';
+          echo 'dbconfig exists=' . (is_file($dbconfig) ? 'yes' : 'no') . PHP_EOL;
+          echo 'local exists=' . (is_file(__DIR__ . '/data/dbconfig.local.php') ? 'yes' : 'no') . PHP_EOL;
+          include_once $dbconfig;
+          echo 'HOST=' . G5_MYSQL_HOST . PHP_EOL;
+          echo 'USER=' . G5_MYSQL_USER . PHP_EOL;
+          echo 'DB=' . G5_MYSQL_DB . PHP_EOL;
+          echo 'PASSLEN=' . strlen(G5_MYSQL_PASSWORD) . PHP_EOL;
+          echo 'PASSSHA8=' . substr(sha1(G5_MYSQL_PASSWORD), 0, 8) . PHP_EOL;
+          mysqli_report(MYSQLI_REPORT_OFF);
+          $link = @mysqli_connect(G5_MYSQL_HOST, G5_MYSQL_USER, G5_MYSQL_PASSWORD, G5_MYSQL_DB);
+          if ($link) {
+            echo "DBCONFIG_CONNECT OK\n";
+            mysqli_close($link);
+          } else {
+            echo 'DBCONFIG_CONNECT FAIL errno=' . mysqli_connect_errno() . ' error=' . mysqli_connect_error() . PHP_EOL;
+          }
+          // show whether local include line is active
+          $src = file_get_contents($dbconfig);
+          echo 'local_include_active=' . (preg_match("/^\s*include_once\(__DIR__\s*\.\s*'\/dbconfig\.local\.php'\);/m", $src) ? 'yes' : 'no') . PHP_EOL;
+          echo 'has_token_key=' . (defined('G5_TOKEN_ENCRYPTION_KEY') ? 'yes' : 'no') . PHP_EOL;
+          EOF
+
+          curl --fail --show-error --silent \
+            --ftp-create-dirs \
+            --user "${FTP_USERNAME}:${FTP_PASSWORD}" \
+            -T probe.php \
+            "ftp://${FTP_SERVER}:${FTP_PORT}/public_html/_db_probe.php"
+
+          echo "=== HTTP PROBE ==="
+          BASE=""
+          for CAND in "https://onoffcpa.icrm.co.kr" "https://onoffcpa.iwinv.net"; do
+            CODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 12 "${CAND}/" || echo 000)
+            if [ "$CODE" = "200" ]; then BASE="$CAND"; break; fi
+          done
+          [ -z "$BASE" ] && BASE="https://onoffcpa.iwinv.net"
+          curl -sS "${BASE}/_db_probe.php" || true
+          echo
+
+          curl --silent --show-error \
+            --user "${FTP_USERNAME}:${FTP_PASSWORD}" \
+            -Q "DELE /public_html/_db_probe.php" \
+            "ftp://${FTP_SERVER}:${FTP_PORT}/" || true

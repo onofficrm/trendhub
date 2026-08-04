@@ -1,0 +1,6 @@
+{
+  "name": "TrendHub",
+  "description": "A CPA affiliate marketing platform landing page.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

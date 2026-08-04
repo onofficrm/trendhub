@@ -1,0 +1,65 @@
+name: MP outbox sync
+
+# 다중 플랫폼 동기화 큐(outbox) 워커를 주기 호출한다.
+# 호스팅에 셸 접근이 없어 서버 crontab 대신 GitHub Actions 스케줄을 사용.
+# 공개 도메인: onoffcpa.icrm.co.kr (우선) / onoffcpa.iwinv.net (폴백)
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: mp-outbox-cron
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Process outbox
+        env:
+          MP_CRON_TOKEN: ${{ secrets.MP_CRON_TOKEN }}
+        run: |
+          set -uo pipefail
+          if [ -z "${MP_CRON_TOKEN}" ]; then
+            echo "MP_CRON_TOKEN secret is empty — run mp-cron-setup first"; exit 1
+          fi
+
+          BASE=""
+          for CAND in "https://onoffcpa.icrm.co.kr" "https://onoffcpa.iwinv.net"; do
+            CODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 12 \
+              "${CAND}/plugin/linkconnect/api/platform/health.php" || echo 000)
+            echo "probe ${CAND} -> ${CODE}"
+            if [ "$CODE" = "200" ]; then
+              BASE="$CAND"
+              break
+            fi
+          done
+          if [ -z "$BASE" ]; then
+            echo "::error::No reachable OnOff CPA base URL"
+            exit 1
+          fi
+          echo "Using BASE=${BASE}"
+
+          BODY=$(mktemp)
+          CODE=$(curl -sS --max-time 120 --retry 2 --retry-delay 10 \
+            -o "$BODY" -w '%{http_code}' \
+            -H "X-LC-Cron-Token: ${MP_CRON_TOKEN}" \
+            "${BASE}/plugin/linkconnect/cron/platform_sync_outbox.php?limit=50") || CODE=000
+
+          echo "HTTP ${CODE}"
+          cat "$BODY"; echo
+
+          if [ "$CODE" != "200" ]; then
+            echo "::error::outbox worker returned HTTP ${CODE}"
+            exit 1
+          fi
+          if grep -q '"ok":false' "$BODY"; then
+            echo "::error::outbox worker reported failure"
+            exit 1
+          fi
+          if grep -qE '"dead":[1-9]' "$BODY"; then
+            echo "::warning::동기화 포기(dead) 건이 발생했습니다. 관리자센터 확인 필요."
+          fi

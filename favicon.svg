@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" role="img" aria-label="OnOff CPA">
+  <defs>
+    <linearGradient id="onoffMarkBg" x1="4" y1="2" x2="28" y2="30" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1d4ed8"/>
+      <stop offset="1" stop-color="#0f766e"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="9" fill="url(#onoffMarkBg)"/>
+  <!-- Power / ON symbol — distinct from LinkConnect chain -->
+  <path d="M16 8v7.2" stroke="#ffffff" stroke-width="2.75" stroke-linecap="round"/>
+  <path d="M11.15 11.1a6.6 6.6 0 1 0 9.7 0" stroke="#ffffff" stroke-width="2.75" stroke-linecap="round"/>
+  <circle cx="16" cy="8" r="1.7" fill="#34d399"/>
+</svg>

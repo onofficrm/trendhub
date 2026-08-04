@@ -1,0 +1,276 @@
+name: Deploy branding hotfix
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy-branding:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare CPA-only hotfix bundle
+        run: |
+          ROOT=".deploy/branding"
+          rm -rf "$ROOT"
+          # 주의: state 동기화 특성상 이전 번들에 있던 경로를 빼면 서버에서 삭제됨.
+          # 반드시 기존 번들 파일들의 합집합을 유지할 것.
+          FILES=(
+            "config.php"
+            "_site.config.php"
+            "inc/linkconnect-spa-bootstrap.php"
+            "cps/index.php"
+            "extend/linkconnect-spa.extend.php"
+            "extend/linkconnect-member.extend.php"
+            "go/lp/index.php"
+            "skin/_inc/onoff-platform.php"
+            "css/onoff-platform.css"
+            "favicon.svg"
+            "img/brand/onoffcpa-mark.svg"
+            "img/brand/onoffcpa-mark.png"
+            "img/brand/og-onoffcpa.jpg"
+            "img/brand/favicon.svg"
+            "img/brand/favicon.png"
+            "img/brand/favicon-32.png"
+            "img/brand/apple-touch-icon.png"
+            "img/common/og-image.jpg"
+            "components/seo-meta.php"
+            "lib/seo-meta.lib.php"
+            "plugin/onoff-builder-bridge/lib/home.php"
+            "plugin/onoff-builder-bridge/lib/renderer.php"
+            "plugin/linkconnect/_common.php"
+            "plugin/linkconnect/config.php"
+            "plugin/linkconnect/inc/conversion.php"
+            "plugin/linkconnect/inc/wallet.php"
+            "plugin/linkconnect/inc/platform.php"
+            "plugin/linkconnect/inc/platform_db.php"
+            "plugin/linkconnect/inc/platform_policy.php"
+            "plugin/linkconnect/inc/platform_adapter.php"
+            "plugin/linkconnect/inc/platform_sync.php"
+            "plugin/linkconnect/api/platform/health.php"
+            "plugin/linkconnect/api/platform/inbound_lead.php"
+            "plugin/linkconnect/api/platform/status_change.php"
+            "plugin/linkconnect/api/platform/remote_status.php"
+            "plugin/linkconnect/api/platform/wallet_balance.php"
+            "plugin/linkconnect/admin/api/platform.php"
+            "plugin/linkconnect/cron/platform_sync_outbox.php"
+            "plugin/linkconnect/install/seed_personal_rehab_mp.php"
+            "plugin/linkconnect/install/audit_dual_wallet_balances.php"
+            "plugin/linkconnect/install/apply_personal_rehab_thumbnails.php"
+            "plugin/linkconnect/install/assets/thumb-banktupt.jpg"
+            "plugin/linkconnect/install/assets/thumb-dasibom.jpg"
+            "plugin/linkconnect/pages/cps.php"
+            "plugin/linkconnect/inc/ai.php"
+            "plugin/linkconnect/inc/campaign.php"
+            "plugin/linkconnect/inc/campaign_banktupt.php"
+            "plugin/linkconnect/inc/campaign_dasibom.php"
+            "plugin/linkconnect/inc/db.php"
+            "plugin/linkconnect/inc/email_notify.php"
+            "plugin/linkconnect/inc/inquiry.php"
+            "plugin/linkconnect/inc/link.php"
+            "plugin/linkconnect/inc/partner_analytics.php"
+            "plugin/linkconnect/inc/sample_data.php"
+            "plugin/linkconnect/inc/settings.php"
+            "plugin/linkconnect/inc/wallet.php"
+            "plugin/linkconnect/install/apply_personal_rehab_campaigns.php"
+            "merchant/banktupt/index.php"
+            "merchant/dasibom/index.php"
+            "plugin/linkconnect/inc/views/admin/dashboard.php"
+            "plugin/linkconnect/inc/views/admin/settings.php"
+            "plugin/linkconnect/inc/views/public/home.php"
+            "plugin/linkconnect/api/campaigns.php"
+            "plugin/linkconnect/api/lp_health.php"
+            "plugin/linkconnect/api/lp_postback.php"
+            "plugin/linkconnect/partner/api/campaigns.php"
+            "plugin/linkconnect/partner/api/linkprice.php"
+            "plugin/linkconnect/admin/api/linkprice.php"
+            "plugin/linkconnect/cron/linkprice_sync_merchants.php"
+            "plugin/linkconnect/cron/linkprice_sync_conversions.php"
+          )
+          for file in "${FILES[@]}"; do
+            mkdir -p "$ROOT/$(dirname "$file")"
+            cp "$file" "$ROOT/$file"
+          done
+          mkdir -p "$ROOT/plugin/linkconnect" "$ROOT/skin/member" "$ROOT/mobile/skin/member"
+          cp -R plugin/linkconnect/layout "$ROOT/plugin/linkconnect/"
+          cp -R skin/member/onoff "$ROOT/skin/member/"
+          cp -R mobile/skin/member/onoff "$ROOT/mobile/skin/member/"
+          mkdir -p \
+            "$ROOT/plugin/onoff-builder-bridge/imports/linkconnect" \
+            "$ROOT/plugin/onoff-builder-bridge/data/imports"
+          rsync -a --exclude '._*' --exclude '.DS_Store' \
+            plugin/onoff-builder-bridge/imports/linkconnect/ \
+            "$ROOT/plugin/onoff-builder-bridge/imports/linkconnect/"
+          cp plugin/onoff-builder-bridge/data/imports/linkconnect.json "$ROOT/plugin/onoff-builder-bridge/data/imports/"
+          find "$ROOT" -name '._*' -delete 2>/dev/null || true
+          grep -q 'OnOff CPA' "$ROOT/plugin/onoff-builder-bridge/imports/linkconnect/index.html"
+          bash scripts/assert-onoffcpa-spa-branding.sh --require-lock \
+            "$ROOT/plugin/onoff-builder-bridge/imports/linkconnect/index.html"
+          echo "Bundle files: $(find "$ROOT" -type f | wc -l)"
+
+      - name: FTP upload branding bundle
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          port: ${{ secrets.FTP_PORT }}
+          parallel: 1
+          protocol: ftp
+          local-dir: .deploy/branding/
+          server-dir: /public_html/
+          state-name: onoffcpa-branding-v1
+          log-level: minimal
+          timeout: 600000
+
+      - name: Update DB and apply personal rehab campaigns
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_PORT: ${{ secrets.FTP_PORT }}
+        run: |
+          cat > rename_site.php << 'EOF'
+          <?php
+          include_once __DIR__ . '/common.php';
+          include_once G5_PLUGIN_PATH . '/linkconnect/config.php';
+          include_once G5_PLUGIN_PATH . '/linkconnect/inc/settings.php';
+          $updates = array(
+              'siteName' => '온오프CPA',
+              'adminEmail' => 'help@onoffcpa.com',
+              'supportEmail' => 'help@onoffcpa.com',
+          );
+          foreach ($updates as $k => $v) {
+              $cur = (string) lc_settings_get($k, '');
+              $need = ($k === 'siteName' && $cur !== $v)
+                  || $cur === ''
+                  || stripos($cur, 'linkconnect') !== false
+                  || strpos($cur, '링크커넥트') !== false;
+              if ($need) {
+                  $r = lc_settings_save_row($k, $v);
+                  echo $k . ': [' . $cur . '] -> [' . $v . '] ' . json_encode($r, JSON_UNESCAPED_UNICODE) . "\n";
+              } else {
+                  echo $k . ': keep [' . $cur . "]\n";
+              }
+          }
+          echo 'OK siteName=' . lc_settings_get('siteName', '') . "\n";
+          echo 'OK g5site=' . (function_exists('g5site_cfg') ? g5site_cfg('site_name', '') : '') . "\n";
+          EOF
+          cat > apply_rehab.php << 'EOF'
+          <?php
+          header('Content-Type: application/json; charset=utf-8');
+          require_once __DIR__ . '/plugin/linkconnect/_common.php';
+          if (!function_exists('lc_campaign_apply_personal_rehab_pair')) {
+              echo json_encode(array('ok' => false, 'error' => 'apply function missing'), JSON_UNESCAPED_UNICODE);
+              exit;
+          }
+          $result = lc_campaign_apply_personal_rehab_pair(array(
+              'banktupt_cp_id' => 6,
+              'dasibom_cp_id' => 11,
+          ));
+          echo json_encode($result, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+          EOF
+          cat > seed_mp_run.php << 'EOF'
+          <?php
+          header('Content-Type: application/json; charset=utf-8');
+          require_once __DIR__ . '/plugin/linkconnect/_common.php';
+          if (!function_exists('lc_mp_seed_personal_rehab_pair')) {
+            require_once G5_PLUGIN_PATH . '/linkconnect/install/seed_personal_rehab_mp.php';
+          }
+          echo json_encode(lc_mp_seed_personal_rehab_pair(), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+          EOF
+          cat > audit_dual_wallet.php << 'EOF'
+          <?php
+          header('Content-Type: application/json; charset=utf-8');
+          require_once __DIR__ . '/plugin/linkconnect/install/audit_dual_wallet_balances.php';
+          echo json_encode(lc_mp_audit_dual_wallet_balances(array('fix' => false)), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+          EOF
+          cat > apply_thumbs.php << 'EOF'
+          <?php
+          header('Content-Type: application/json; charset=utf-8');
+          require_once __DIR__ . '/plugin/linkconnect/install/apply_personal_rehab_thumbnails.php';
+          echo json_encode(lc_apply_personal_rehab_thumbnails(), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+          EOF
+          curl --fail --show-error --silent \
+            --ftp-create-dirs \
+            --user "${FTP_USERNAME}:${FTP_PASSWORD}" \
+            -T rename_site.php \
+            "ftp://${FTP_SERVER}:${FTP_PORT}/public_html/rename_site.php"
+          curl --fail --show-error --silent \
+            --ftp-create-dirs \
+            --user "${FTP_USERNAME}:${FTP_PASSWORD}" \
+            -T apply_rehab.php \
+            "ftp://${FTP_SERVER}:${FTP_PORT}/public_html/apply_rehab.php"
+          curl --fail --show-error --silent \
+            --ftp-create-dirs \
+            --user "${FTP_USERNAME}:${FTP_PASSWORD}" \
+            -T seed_mp_run.php \
+            "ftp://${FTP_SERVER}:${FTP_PORT}/public_html/seed_mp_run.php"
+          curl --fail --show-error --silent \
+            --ftp-create-dirs \
+            --user "${FTP_USERNAME}:${FTP_PASSWORD}" \
+            -T audit_dual_wallet.php \
+            "ftp://${FTP_SERVER}:${FTP_PORT}/public_html/audit_dual_wallet.php"
+          curl --fail --show-error --silent \
+            --ftp-create-dirs \
+            --user "${FTP_USERNAME}:${FTP_PASSWORD}" \
+            -T apply_thumbs.php \
+            "ftp://${FTP_SERVER}:${FTP_PORT}/public_html/apply_thumbs.php"
+          BASE=""
+          for CAND in "https://onoffcpa.icrm.co.kr" "https://onoffcpa.iwinv.net"; do
+            CODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 12 \
+              "${CAND}/plugin/linkconnect/api/platform/health.php" || echo 000)
+            echo "probe ${CAND} -> ${CODE}"
+            if [ "$CODE" = "200" ]; then BASE="$CAND"; break; fi
+          done
+          if [ -z "$BASE" ]; then BASE="https://onoffcpa.iwinv.net"; fi
+          echo "Using BASE=${BASE}"
+          echo "=== RENAME ==="
+          curl -sS "${BASE}/rename_site.php" || true
+          echo
+          echo "=== APPLY PERSONAL REHAB ==="
+          curl -sS "${BASE}/apply_rehab.php" || true
+          echo
+          echo "=== SEED MP ADVERTISERS ==="
+          curl -sS "${BASE}/seed_mp_run.php" || true
+          echo
+          echo "=== DUAL WALLET AUDIT ==="
+          curl -sS "${BASE}/audit_dual_wallet.php" || true
+          echo
+          echo "=== APPLY PERSONAL REHAB THUMBNAILS ==="
+          curl -sS "${BASE}/apply_thumbs.php" || true
+          echo
+          echo "=== HEALTH ==="
+          curl -sS "${BASE}/plugin/linkconnect/api/platform/health.php" || true
+          echo
+          echo "=== WALLET_BALANCE ==="
+          curl -sS -o /dev/null -w 'http=%{http_code}\n' -X POST \
+            -H 'Content-Type: application/json' -d '{}' \
+            "${BASE}/plugin/linkconnect/api/platform/wallet_balance.php" || true
+          echo "=== OG IMAGE ==="
+          curl -sS -o /dev/null -w 'og=%{http_code}\n' "${BASE}/img/brand/og-onoffcpa.jpg" || true
+          curl --silent --show-error \
+            --user "${FTP_USERNAME}:${FTP_PASSWORD}" \
+            -Q "DELE /public_html/rename_site.php" \
+            "ftp://${FTP_SERVER}:${FTP_PORT}/" || true
+          curl --silent --show-error \
+            --user "${FTP_USERNAME}:${FTP_PASSWORD}" \
+            -Q "DELE /public_html/apply_rehab.php" \
+            "ftp://${FTP_SERVER}:${FTP_PORT}/" || true
+          curl --silent --show-error \
+            --user "${FTP_USERNAME}:${FTP_PASSWORD}" \
+            -Q "DELE /public_html/seed_mp_run.php" \
+            "ftp://${FTP_SERVER}:${FTP_PORT}/" || true
+          curl --silent --show-error \
+            --user "${FTP_USERNAME}:${FTP_PASSWORD}" \
+            -Q "DELE /public_html/audit_dual_wallet.php" \
+            "ftp://${FTP_SERVER}:${FTP_PORT}/" || true
+          curl --silent --show-error \
+            --user "${FTP_USERNAME}:${FTP_PASSWORD}" \
+            -Q "DELE /public_html/apply_thumbs.php" \
+            "ftp://${FTP_SERVER}:${FTP_PORT}/" || true
+          echo "=== CAMPAIGNS ==="
+          curl -sS "${BASE}/plugin/linkconnect/api/campaigns.php?type=cpa" | head -c 2000
+          echo
