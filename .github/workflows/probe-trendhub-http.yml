@@ -1,0 +1,80 @@
+name: Probe TrendHub HTTP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Probe critical URLs
+        run: |
+          set -uo pipefail
+          BASE="https://trendhub.iwinv.net"
+          paths=(
+            "/"
+            "/index.php"
+            "/plugin/onoff-builder-bridge/imports/linkconnect/index.html"
+            "/plugin/onoff-builder-bridge/imports/linkconnect/assets/index-DT8ou997.js"
+            "/plugin/onoff-builder-bridge/imports/linkconnect/assets/index-DXX7FzVo.css"
+            "/plugin/onoff-builder-bridge/imports/linkconnect/hero_dashboard_mockup.webp"
+            "/plugin/onoff-builder-bridge/bootstrap.php"
+            "/plugin/linkconnect/config.php"
+            "/plugin/linkconnect/api/campaigns.php"
+            "/plugin/linkconnect/api/index.php"
+            "/bbs/login.php"
+            "/css/default.css"
+            "/js/common.js"
+            "/data/dbconfig.php"
+            "/img/brand/onoffcpa-mark.svg"
+          )
+
+          for path in "${paths[@]}"; do
+            code=$(curl -sS -o /tmp/body -w "%{http_code}" --connect-timeout 15 --max-time 45 "${BASE}${path}" || echo "000")
+            size=$(wc -c </tmp/body | tr -d ' ')
+            ctype=$(file -b --mime-type /tmp/body 2>/dev/null || echo "?")
+            echo "STATUS ${code} SIZE ${size} TYPE ${ctype} PATH ${path}"
+            if [ "$path" = "/" ] || [ "$path" = "/index.php" ]; then
+              echo "--- snippet ---"
+              head -c 800 /tmp/body | tr '\n' ' '
+              echo
+              echo "--- warnings ---"
+              grep -E "Warning|Fatal|Error|Exception" /tmp/body | head -5 || true
+            fi
+          done
+
+          # FTP list key dirs
+          echo "=== FTP list (if secrets present) ==="
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_PORT: ${{ secrets.FTP_PORT }}
+
+      - name: FTP list missing stacks
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_PORT: ${{ secrets.FTP_PORT }}
+        run: |
+          set -uo pipefail
+          for path in \
+            plugin \
+            plugin/linkconnect \
+            plugin/onoff-builder-bridge \
+            plugin/onoff-builder-bridge/imports/linkconnect \
+            plugin/onoff-builder-bridge/imports/linkconnect/assets \
+            css \
+            js \
+            lib \
+            extend \
+            skin \
+            data
+          do
+            echo "=== FTP ${path} ==="
+            curl --silent --show-error --list-only --connect-timeout 20 --max-time 60 \
+              --user "${FTP_USERNAME}:${FTP_PASSWORD}" \
+              "ftp://${FTP_SERVER}:${FTP_PORT}/public_html/${path}/" 2>&1 | head -50 || true
+          done
