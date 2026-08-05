@@ -1,0 +1,58 @@
+name: Hotfix member skin
+
+# login.skin.php 등 회원 스킨만 FTP 업로드 (전체 배포 대체용)
+on:
+  workflow_dispatch:
+
+jobs:
+  upload-member-skins:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Upload skin/member/basic and onoff
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_PORT: ${{ secrets.FTP_PORT }}
+        run: |
+          set -euo pipefail
+          missing=0
+          [ -z "${FTP_SERVER:-}" ] && echo "::error::FTP_SERVER missing" && missing=1
+          [ -z "${FTP_USERNAME:-}" ] && echo "::error::FTP_USERNAME missing" && missing=1
+          [ -z "${FTP_PASSWORD:-}" ] && echo "::error::FTP_PASSWORD missing" && missing=1
+          [ -z "${FTP_PORT:-}" ] && echo "::error::FTP_PORT missing" && missing=1
+          [ "$missing" -eq 1 ] && exit 1
+
+          upload_tree() {
+            local local_root="$1"
+            local remote_rel="$2"
+            find "$local_root" -type f ! -name '._*' ! -name '.DS_Store' | while read -r f; do
+              rel="${f#"$local_root"/}"
+              url="ftp://${FTP_SERVER}:${FTP_PORT}/public_html/${remote_rel}/${rel}"
+              echo "PUT ${remote_rel}/${rel}"
+              curl --fail --silent --show-error --ftp-create-dirs \
+                --user "${FTP_USERNAME}:${FTP_PASSWORD}" \
+                -T "$f" \
+                "$url"
+            done
+          }
+
+          test -f skin/member/basic/login.skin.php
+          test -f skin/member/onoff/login.skin.php
+
+          upload_tree "skin/member/basic" "skin/member/basic"
+          upload_tree "skin/member/onoff" "skin/member/onoff"
+
+          echo "=== verify remote listing ==="
+          curl --silent --show-error --list-only \
+            --user "${FTP_USERNAME}:${FTP_PASSWORD}" \
+            "ftp://${FTP_SERVER}:${FTP_PORT}/public_html/skin/member/basic/" | head -40
+          curl --silent --show-error --list-only \
+            --user "${FTP_USERNAME}:${FTP_PASSWORD}" \
+            "ftp://${FTP_SERVER}:${FTP_PORT}/public_html/skin/member/onoff/" | head -40
+
+          echo "Hotfix member skin upload done."
