@@ -235,7 +235,7 @@ if (!function_exists('g5b_seo_default_og_image')) {
         }
 
         $candidates[] = array(
-            'path'   => '/plugin/onoff-builder-bridge/imports/linkconnect/hero_dashboard_mockup.png',
+            'path'   => '/plugin/onoff-builder-bridge/imports/linkconnect/hero_trendhub_marketplace.jpg',
             'width'  => 1536,
             'height' => 1024,
         );

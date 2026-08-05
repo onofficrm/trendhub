@@ -20,7 +20,7 @@ const asset = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 const images = {
   hero: asset('about/about_hero.webp'),
   ecosystem: asset('about/about_ecosystem.webp'),
-  dashboard: asset('hero_dashboard_mockup.webp'),
+  dashboard: asset('hero_trendhub_marketplace.webp'),
   partner: asset('webtoon/ep6-p1.webp'),
   tracking: asset('webtoon/ep4-p2.webp'),
   settlement: asset('webtoon/ep5-p2.webp'),

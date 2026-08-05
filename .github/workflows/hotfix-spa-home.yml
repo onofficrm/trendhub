@@ -57,19 +57,23 @@ jobs:
 
           test -f plugin/onoff-builder-bridge/imports/linkconnect/index.html
           test -f plugin/onoff-builder-bridge/imports/linkconnect/spa-brand.trendhub
-          test -f plugin/onoff-builder-bridge/imports/linkconnect/assets/index-DT8ou997.js
+          JS_BUNDLE=$(ls plugin/onoff-builder-bridge/imports/linkconnect/assets/index-*.js | head -1)
+          test -f "$JS_BUNDLE"
+          test -f plugin/onoff-builder-bridge/imports/linkconnect/hero_trendhub_marketplace.webp
 
           # SPA bundle + static assets
           upload_tree "plugin/onoff-builder-bridge/imports/linkconnect" "plugin/onoff-builder-bridge/imports/linkconnect"
           upload_file "plugin/onoff-builder-bridge/imports/.htaccess" "plugin/onoff-builder-bridge/imports/.htaccess"
 
-          # Bridge PHP needed to serve home
+          # Bridge PHP + site config (hero OG path)
           upload_tree "plugin/onoff-builder-bridge/lib" "plugin/onoff-builder-bridge/lib"
           upload_file "plugin/onoff-builder-bridge/bootstrap.php" "plugin/onoff-builder-bridge/bootstrap.php"
           upload_file "plugin/onoff-builder-bridge/page.php" "plugin/onoff-builder-bridge/page.php"
           upload_file "index.php" "index.php"
           upload_file "inc/onoff-builder-home.php" "inc/onoff-builder-home.php"
           upload_file "_site.config.php" "_site.config.php"
+          upload_file "components/seo-meta.php" "components/seo-meta.php"
+          upload_file "plugin/linkconnect/inc/views/public/home.php" "plugin/linkconnect/inc/views/public/home.php"
 
           echo "=== remote SPA listing ==="
           curl --silent --show-error --list-only \
@@ -103,9 +107,13 @@ jobs:
             fi
           }
 
-          probe "/" "index-DT8ou997.js"
-          probe "/plugin/onoff-builder-bridge/imports/linkconnect/assets/index-DT8ou997.js" ""
-          probe "/plugin/onoff-builder-bridge/imports/linkconnect/assets/index-DXX7FzVo.css" ""
+          JS_NAME=$(basename "$(ls plugin/onoff-builder-bridge/imports/linkconnect/assets/index-*.js | head -1)")
+          CSS_NAME=$(basename "$(ls plugin/onoff-builder-bridge/imports/linkconnect/assets/index-*.css | head -1)")
+
+          probe "/" "$JS_NAME"
+          probe "/plugin/onoff-builder-bridge/imports/linkconnect/assets/${JS_NAME}" ""
+          probe "/plugin/onoff-builder-bridge/imports/linkconnect/assets/${CSS_NAME}" ""
+          probe "/plugin/onoff-builder-bridge/imports/linkconnect/hero_trendhub_marketplace.webp" ""
           probe "/plugin/onoff-builder-bridge/imports/linkconnect/spa-brand.trendhub" "trendhub"
           probe "/bbs/login.php" "로그인"
 

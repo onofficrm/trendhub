@@ -25,10 +25,10 @@ $site_config = array(
     'logo_path'           => '/img/brand/onoffcpa-mark.svg',
     /* 회원 스킨 강제 적용 (DB cf_member_skin 무관) — onoff = 트랜드허브 톤 회원 페이지 */
     'platform_member_skin' => 'onoff',
-    /* SNS/OG — 트랜드허브 (임시 onoffcpa 자산) */
-    'og_image'            => '/img/brand/og-onoffcpa.jpg',
-    'og_image_width'      => '1200',
-    'og_image_height'     => '630',
+    /* SNS/OG — 트랜드허브 전용 히어로 */
+    'og_image'            => '/plugin/onoff-builder-bridge/imports/linkconnect/hero_trendhub_marketplace.jpg',
+    'og_image_width'      => '1536',
+    'og_image_height'     => '1024',
     /* SEO (components/seo-meta.php) */
     'seo_title'           => '트랜드허브 | CPA 제휴마케팅 플랫폼',
     'seo_description'     => '트랜드허브는 광고주와 마케팅 파트너를 연결하는 CPA 제휴마케팅 플랫폼입니다. CPA광고 상품 참여, DB·전환 실시간 성과 확인, 광고주 DB 관리와 파트너 수익 정산까지 제공합니다.',
