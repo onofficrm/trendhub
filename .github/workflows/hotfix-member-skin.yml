@@ -1,18 +1,18 @@
 name: Hotfix member skin
 
-# login.skin.php 등 회원 스킨만 FTP 업로드 (전체 배포 대체용)
+# 회원 로그인/플랫폼 스킨 의존 파일 FTP 업로드 (전체 배포 대체용)
 on:
   workflow_dispatch:
 
 jobs:
   upload-member-skins:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Upload skin/member/basic and onoff
+      - name: Upload member skins and platform deps
         env:
           FTP_SERVER: ${{ secrets.FTP_SERVER }}
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
@@ -41,18 +41,46 @@ jobs:
             done
           }
 
+          upload_file() {
+            local local_file="$1"
+            local remote_rel="$2"
+            test -f "$local_file"
+            echo "PUT ${remote_rel}"
+            curl --fail --silent --show-error --ftp-create-dirs \
+              --user "${FTP_USERNAME}:${FTP_PASSWORD}" \
+              -T "$local_file" \
+              "ftp://${FTP_SERVER}:${FTP_PORT}/public_html/${remote_rel}"
+          }
+
           test -f skin/member/basic/login.skin.php
           test -f skin/member/onoff/login.skin.php
+          test -f skin/_inc/onoff-platform.php
+          test -f css/onoff-platform.css
 
           upload_tree "skin/member/basic" "skin/member/basic"
           upload_tree "skin/member/onoff" "skin/member/onoff"
+          upload_tree "mobile/skin/member/basic" "mobile/skin/member/basic"
+          upload_tree "mobile/skin/member/onoff" "mobile/skin/member/onoff"
+          upload_tree "skin/_inc" "skin/_inc"
+          upload_tree "img/brand" "img/brand"
+
+          upload_file "css/onoff-platform.css" "css/onoff-platform.css"
+          upload_file "lib/onoff-platform-skin.lib.php" "lib/onoff-platform-skin.lib.php"
+          upload_file "extend/onoff-platform-skin.extend.php" "extend/onoff-platform-skin.extend.php"
+          upload_file "_site.config.php" "_site.config.php"
 
           echo "=== verify remote listing ==="
-          curl --silent --show-error --list-only \
-            --user "${FTP_USERNAME}:${FTP_PASSWORD}" \
-            "ftp://${FTP_SERVER}:${FTP_PORT}/public_html/skin/member/basic/" | head -40
-          curl --silent --show-error --list-only \
-            --user "${FTP_USERNAME}:${FTP_PASSWORD}" \
-            "ftp://${FTP_SERVER}:${FTP_PORT}/public_html/skin/member/onoff/" | head -40
+          for path in \
+            skin/member/basic \
+            skin/member/onoff \
+            skin/_inc \
+            css \
+            img/brand
+          do
+            echo "--- ${path} ---"
+            curl --silent --show-error --list-only \
+              --user "${FTP_USERNAME}:${FTP_PASSWORD}" \
+              "ftp://${FTP_SERVER}:${FTP_PORT}/public_html/${path}/" | head -40 || true
+          done
 
           echo "Hotfix member skin upload done."
