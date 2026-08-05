@@ -8,15 +8,32 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - name: Dump home HTML and headers
+        run: |
+          set -euo pipefail
+          curl -sS -D /tmp/home.hdr -o /tmp/home.html --connect-timeout 20 --max-time 60 "https://trendhub.iwinv.net/"
+          echo "=== HOME HEADERS ==="
+          cat /tmp/home.hdr
+          echo "=== HOME BODY CHECK ==="
+          wc -c /tmp/home.html
+          rg -n "id=\"root\"|index-DT8ou997|index-DXX7FzVo|Warning|Fatal|트랜드허브|브랜드 검증" /tmp/home.html || true
+          echo "=== HOME TAIL ==="
+          tail -c 800 /tmp/home.html
+          echo
+          echo "=== JS HEADERS ==="
+          curl -sS -I --connect-timeout 20 --max-time 60 "https://trendhub.iwinv.net/plugin/onoff-builder-bridge/imports/linkconnect/assets/index-DT8ou997.js" | tr -d '\r'
+          echo "=== CSS HEADERS ==="
+          curl -sS -I --connect-timeout 20 --max-time 60 "https://trendhub.iwinv.net/plugin/onoff-builder-bridge/imports/linkconnect/assets/index-DXX7FzVo.css" | tr -d '\r'
+
       - name: Install playwright and render home
         run: |
           set -euo pipefail
           npm init -y >/dev/null
-          npm install playwright-core@1.48.2 >/dev/null
+          npm install playwright@1.49.1 >/dev/null
           npx playwright install --with-deps chromium
 
           node <<'NODE'
-          const { chromium } = require('playwright-core');
+          const { chromium } = require('playwright');
           (async () => {
             const browser = await chromium.launch({ headless: true });
             const page = await browser.newPage();
@@ -35,23 +52,16 @@ jobs:
               timeout: 90000,
             });
             console.log('HTTP', resp && resp.status());
-            await page.waitForTimeout(3000);
-            const html = await page.content();
+            await page.waitForTimeout(4000);
             const rootHtml = await page.locator('#root').innerHTML().catch(() => 'NO_ROOT');
             const title = await page.title();
             const text = await page.locator('body').innerText().catch(() => '');
             console.log('TITLE', title);
             console.log('ROOT_LEN', rootHtml.length);
-            console.log('ROOT_SNIP', rootHtml.slice(0, 500).replace(/\n/g, ' '));
-            console.log('BODY_TEXT_SNIP', text.slice(0, 500).replace(/\n/g, ' | '));
-            console.log('PAGE_ERRORS', JSON.stringify(errors.slice(0, 20), null, 2));
-            console.log('FAILED_REQ', JSON.stringify(failed.slice(0, 30), null, 2));
-
-            // headers for JS
-            const js = await page.request.get('https://trendhub.iwinv.net/plugin/onoff-builder-bridge/imports/linkconnect/assets/index-DT8ou997.js');
-            console.log('JS_STATUS', js.status(), 'JS_CT', js.headers()['content-type']);
-            const css = await page.request.get('https://trendhub.iwinv.net/plugin/onoff-builder-bridge/imports/linkconnect/assets/index-DXX7FzVo.css');
-            console.log('CSS_STATUS', css.status(), 'CSS_CT', css.headers()['content-type']);
+            console.log('ROOT_SNIP', rootHtml.slice(0, 800).replace(/\n/g, ' '));
+            console.log('BODY_TEXT_SNIP', text.slice(0, 800).replace(/\n/g, ' | '));
+            console.log('PAGE_ERRORS', JSON.stringify(errors.slice(0, 30), null, 2));
+            console.log('FAILED_REQ', JSON.stringify(failed.slice(0, 40), null, 2));
 
             await browser.close();
             if (!rootHtml || rootHtml === 'NO_ROOT' || rootHtml.length < 50) {

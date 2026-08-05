@@ -13,7 +13,7 @@ concurrency:
 jobs:
   ftp-deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 180
 
     steps:
       - name: Checkout repository
@@ -66,3 +66,11 @@ jobs:
             trendhub-deploy-v*
             builder/**
             **/builder/**
+            plugin/auto_comment/packages/**
+            plugin/linkconnect/lib/tcpdf/fonts/**
+            plugin/linkconnect/lib/tcpdf/tools/**
+            **/tcpdf/fonts/**
+            _test/**
+            tests/**
+            **/*.md
+            **/README*

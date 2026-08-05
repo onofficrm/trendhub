@@ -1,0 +1,14 @@
+# SPA 정적 에셋 MIME / CORS (빈 화면·모듈 로드 실패 방지)
+<IfModule mod_mime.c>
+    AddType text/css .css
+    AddType application/javascript .js .mjs
+    AddType image/webp .webp
+    AddType image/svg+xml .svg
+</IfModule>
+
+<IfModule mod_headers.c>
+    <FilesMatch "\.(?i:css|js|mjs)$">
+        Header set Access-Control-Allow-Origin "*"
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
+</IfModule>

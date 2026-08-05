@@ -843,6 +843,10 @@ if (!function_exists('onoff_builder_rewrite_asset_paths')) {
             $html = preg_replace($pattern, $replacement, $html);
         }
 
+        // Vite는 script/link에 crossorigin을 붙인다. 동일 오리진 + CSS @import(CDN) 조합에서
+        // 스타일시트 CORS 실패가 나면 화면이 비어 보일 수 있어 제거한다.
+        $html = preg_replace('#\s+crossorigin(?:\s*=\s*(["\'])[^"\']*\1)?#i', '', $html);
+
         return $html;
     }
 }

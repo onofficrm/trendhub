@@ -61,6 +61,7 @@ jobs:
 
           # SPA bundle + static assets
           upload_tree "plugin/onoff-builder-bridge/imports/linkconnect" "plugin/onoff-builder-bridge/imports/linkconnect"
+          upload_file "plugin/onoff-builder-bridge/imports/.htaccess" "plugin/onoff-builder-bridge/imports/.htaccess"
 
           # Bridge PHP needed to serve home
           upload_tree "plugin/onoff-builder-bridge/lib" "plugin/onoff-builder-bridge/lib"
