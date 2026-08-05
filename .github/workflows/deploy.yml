@@ -1,9 +1,8 @@
 name: Deploy to Server
 
+# 전체 FTP는 iwinv 공유호스팅에서 웹(443) 접속 거절을 유발할 수 있음.
+# push 자동 실행 비활성 — 필요 시 Actions에서 수동 실행.
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 concurrency:
