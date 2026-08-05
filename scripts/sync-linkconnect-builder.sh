@@ -34,6 +34,7 @@ rsync -a --delete \
   --exclude 'spa-brand.trendhub' \
   --exclude 'spa-brand.onoffcpa' \
   --exclude 'BRANDING.md' \
+  --exclude '.htaccess' \
   "$SRC/assets/" "$DEST/assets/"
 cp "$SRC/index.html" "$DEST/index.html"
 
