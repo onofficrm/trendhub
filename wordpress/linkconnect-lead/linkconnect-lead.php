@@ -1,13 +1,13 @@
 <?php
 /**
  * Plugin Name: 트랜드허브 상담폼
- * Plugin URI:  https://trendhub.iwinv.net/
- * Description: 파트너 홍보코드(lkCode)로 트랜드허브 상담신청 폼을 워드프레스에 삽입합니다.
- * Version:     1.0.0
+ * Plugin URI:  https://trendhub.icrm.co.kr/
+ * Description: 파트너 홍보코드·위젯 키로 트랜드허브 상담신청 위젯을 워드프레스에 삽입합니다.
+ * Version:     1.1.1
  * Requires at least: 5.8
  * Requires PHP: 7.4
  * Author:      트랜드허브
- * Author URI:  https://trendhub.iwinv.net/
+ * Author URI:  https://trendhub.icrm.co.kr/
  * License:     GPLv2 or later
  * Text Domain: linkconnect-lead
  */
@@ -16,11 +16,11 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('LC_LEAD_VERSION', '1.0.0');
+define('LC_LEAD_VERSION', '1.1.1');
 define('LC_LEAD_PLUGIN_FILE', __FILE__);
 define('LC_LEAD_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('LC_LEAD_PLUGIN_URL', plugin_dir_url(__FILE__));
-define('LC_LEAD_DEFAULT_ORIGIN', 'https://trendhub.iwinv.net');
+define('LC_LEAD_DEFAULT_ORIGIN', 'https://trendhub.icrm.co.kr');
 
 require_once LC_LEAD_PLUGIN_DIR . 'includes/class-settings.php';
 require_once LC_LEAD_PLUGIN_DIR . 'includes/class-shortcode.php';
