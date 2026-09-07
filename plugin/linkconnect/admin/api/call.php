@@ -42,7 +42,13 @@ if ($method === 'GET') {
         foreach (lc_call_logs_list($filters) as $row) {
             $rows[] = lc_call_log_to_api($row, true, false);
         }
-        lc_api_success(array('items' => $rows, 'dbReady' => lc_db_installed()));
+        lc_api_success(array(
+            'items' => $rows,
+            'dbReady' => lc_db_installed(),
+            'canViewUnmaskedUnmatchedCaller' => function_exists('lc_call_can_view_unmasked_unmatched_caller')
+                ? lc_call_can_view_unmasked_unmatched_caller()
+                : false,
+        ));
     }
 
     if ($view === 'settings') {
@@ -256,17 +262,34 @@ if ($method === 'POST') {
 
         $dry_run = !empty($body['dryRun']) || (isset($body['dryRun']) && (string) $body['dryRun'] === '1');
         if ($dry_run) {
+            $preview = array_slice($parsed['rows'] ?? array(), 0, 5);
+            // 미리보기는 아직 미매칭 상태 → onoffcpa 최고관리자 외 발신번호 뒷4자리 마스킹
+            if (!function_exists('lc_call_can_view_unmasked_unmatched_caller') || !lc_call_can_view_unmasked_unmatched_caller()) {
+                foreach ($preview as $idx => $prow) {
+                    if (isset($prow['caller']) && function_exists('lc_call_mask_caller_last4')) {
+                        $preview[$idx]['caller'] = lc_call_mask_caller_last4($prow['caller']);
+                    }
+                }
+            }
             lc_api_success(array(
                 'message' => $parsed['message'],
                 'dryRun'  => true,
                 'total'   => count($parsed['rows'] ?? array()),
                 'headers' => $parsed['headers'] ?? array(),
-                'preview' => array_slice($parsed['rows'] ?? array(), 0, 5),
+                'preview' => $preview,
             ));
         }
 
         $skip_conversion = !empty($body['skipConversion']) || (isset($body['skipConversion']) && (string) $body['skipConversion'] === '1');
         $result = lc_call_logs_import_bulk($parsed['rows'] ?? array(), $skip_conversion);
+        if ($result['ok'] && function_exists('lc_call_logs_sync_to_peers')) {
+            $peer_sync = lc_call_logs_sync_to_peers($parsed['rows'] ?? array(), $skip_conversion);
+            $result['peerSync'] = $peer_sync;
+            if (!empty($peer_sync['enabled']) && !empty($peer_sync['message'])) {
+                $result['message'] = rtrim((string) ($result['message'] ?? ''), '.')
+                    . ' · 동기화: ' . $peer_sync['message'];
+            }
+        }
         if ($result['ok'] && function_exists('lc_admin_log_write')) {
             lc_admin_log_write('call_import_logs', 'call_log', 0, (string) ($result['message'] ?? '통화내역 업로드'), array(
                 'total'     => (int) ($result['total'] ?? 0),
@@ -276,6 +299,7 @@ if ($method === 'POST') {
                 'unmatched' => (int) ($result['unmatched'] ?? 0),
                 'skipConversion' => $skip_conversion,
                 'viaPaste'  => $paste_text !== '',
+                'peerSync'  => isset($peer_sync) ? $peer_sync : null,
             ));
         }
         $result['ok'] ? lc_api_success($result) : lc_api_error($result['message'], 'IMPORT_FAILED', 400);

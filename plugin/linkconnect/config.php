@@ -161,6 +161,20 @@ if (!defined('LC_ONOFFCPA_LEGACY_URL')) {
     define('LC_ONOFFCPA_LEGACY_URL', 'https://trendhub.iwinv.net');
 }
 
+/**
+ * 콜디비 통화내역 동기화 (onoffcpa → 링크커넥트·트렌드허브)
+ * 수신 API: /plugin/linkconnect/api/call_logs_inbound.php
+ */
+if (!defined('LC_CALL_LOG_SYNC_ENABLED')) {
+    define('LC_CALL_LOG_SYNC_ENABLED', true);
+}
+if (!defined('LC_CALL_LOG_SYNC_SECRET')) {
+    define('LC_CALL_LOG_SYNC_SECRET', 'lc-call-sync-v1-9e4b7c2a1f8d6035');
+}
+if (!defined('LC_CALL_LOG_SYNC_PEERS')) {
+    define('LC_CALL_LOG_SYNC_PEERS', '');
+}
+
 /* ── 링크프라이스 CPS (외부 네트워크, CPA와 분리) ── */
 /**
  * CPS 취급 여부. 트랜드허브는 CPA 전용이므로 false.

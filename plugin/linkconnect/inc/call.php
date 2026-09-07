@@ -2017,27 +2017,121 @@ if (!function_exists('lc_call_logs_import_map_headers')) {
     }
 }
 
+if (!function_exists('lc_call_logs_import_first_row_is_header')) {
+    /**
+     * 첫 행이 헤더인지 데이터인지 판별.
+     *
+     * @param array<int,string> $row
+     */
+    function lc_call_logs_import_first_row_is_header(array $row)
+    {
+        $first = trim((string) ($row[0] ?? ''));
+        $first_digits = preg_replace('/\D+/', '', $first);
+        // 첫 칸이 전화번호/가상번호처럼 보이면 데이터 행
+        if ($first_digits !== '' && strlen($first_digits) >= 8 && preg_match('/^\d+$/', $first_digits)) {
+            return false;
+        }
+
+        $map = lc_call_logs_import_map_headers($row);
+
+        return isset($map['virtualNumber'])
+            || isset($map['caller'])
+            || isset($map['callDate'])
+            || isset($map['startedAt'])
+            || isset($map['result'])
+            || isset($map['duration']);
+    }
+}
+
+if (!function_exists('lc_call_logs_import_positional_map')) {
+    /**
+     * 헤더 없는 표준 콜업체 양식(발신/가상/착신/일자/시간/초/녹음/결과) 위치 매핑.
+     *
+     * @return array<string,int>
+     */
+    function lc_call_logs_import_positional_map($col_count)
+    {
+        $col_count = (int) $col_count;
+        if ($col_count >= 8) {
+            return array(
+                'caller'        => 0,
+                'virtualNumber' => 1,
+                'callee'        => 2,
+                'callDate'      => 3,
+                'startedAt'     => 4,
+                'duration'      => 5,
+                'recordingUrl'  => 6,
+                'result'        => 7,
+            );
+        }
+        if ($col_count === 7) {
+            // 녹음열 없음
+            return array(
+                'caller'        => 0,
+                'virtualNumber' => 1,
+                'callee'        => 2,
+                'callDate'      => 3,
+                'startedAt'     => 4,
+                'duration'      => 5,
+                'result'        => 6,
+            );
+        }
+        if ($col_count === 6) {
+            // 일자+시간 합침
+            return array(
+                'caller'        => 0,
+                'virtualNumber' => 1,
+                'callee'        => 2,
+                'startedAt'     => 3,
+                'duration'      => 4,
+                'result'        => 5,
+            );
+        }
+
+        return array();
+    }
+}
+
 if (!function_exists('lc_call_logs_import_parse_rows')) {
     /**
      * 헤더+데이터 매트릭스를 통화 ingest payload 배열로 변환.
+     * 헤더가 없어도 표준 8열(발신/가상/착신/일자/시간/초/녹음/결과)이면 자동 매핑.
      *
      * @param array<int,array<int,string>> $matrix
      * @return array{ok:bool,message:string,rows?:array<int,array<string,mixed>>,headers?:array<int,string>}
      */
     function lc_call_logs_import_matrix_to_rows(array $matrix)
     {
-        if (count($matrix) < 2) {
-            return array('ok' => false, 'message' => '헤더와 데이터 행이 필요합니다.');
+        if (!$matrix) {
+            return array('ok' => false, 'message' => '붙여넣을 통화내역이 없습니다.');
         }
 
-        $headers = array_map('trim', $matrix[0]);
-        $map = lc_call_logs_import_map_headers($headers);
+        $default_headers = array('발신번호', '가상번호', '착신번호', '통화일자', '통화시작시간', '통화시간(초)', '녹음파일', '통화결과');
+        $has_header = lc_call_logs_import_first_row_is_header($matrix[0]);
+        if ($has_header) {
+            if (count($matrix) < 2) {
+                return array('ok' => false, 'message' => '헤더와 데이터 행이 필요합니다.');
+            }
+            $headers = array_map('trim', $matrix[0]);
+            $map = lc_call_logs_import_map_headers($headers);
+            $start = 1;
+        } else {
+            $headers = $default_headers;
+            $map = lc_call_logs_import_positional_map(count($matrix[0]));
+            $start = 0;
+        }
+
         if (!isset($map['virtualNumber'])) {
-            return array('ok' => false, 'message' => '가상번호 열을 찾을 수 없습니다. (가상번호 / virtualNumber 등)');
+            return array(
+                'ok' => false,
+                'message' => $has_header
+                    ? '가상번호 열을 찾을 수 없습니다. (가상번호 / virtualNumber 등)'
+                    : '헤더가 없고 표준 열 순서(발신번호 가상번호 착신번호 통화일자 통화시작시간 …)와도 맞지 않습니다. 헤더를 포함하거나 표준 순서로 붙여넣어 주세요.',
+            );
         }
 
         $rows = array();
-        for ($i = 1, $n = count($matrix); $i < $n; $i++) {
+        for ($i = $start, $n = count($matrix); $i < $n; $i++) {
             $line = $matrix[$i];
             $virtual = trim((string) ($line[$map['virtualNumber']] ?? ''));
             if ($virtual === '') {
@@ -2056,6 +2150,14 @@ if (!function_exists('lc_call_logs_import_parse_rows')) {
             }
 
             $duration_raw = isset($map['duration']) ? trim((string) ($line[$map['duration']] ?? '')) : '';
+            $recording = isset($map['recordingUrl']) ? trim((string) ($line[$map['recordingUrl']] ?? '')) : '';
+            // "다운로드" 같은 버튼 텍스트는 URL이 아님
+            if ($recording !== ''
+                && !preg_match('#^https?://#i', $recording)
+                && !preg_match('#\.(mp3|wav|m4a|ogg)(\?|$)#i', $recording)
+            ) {
+                $recording = '';
+            }
 
             $payload = array(
                 'virtualNumber' => $virtual,
@@ -2065,12 +2167,16 @@ if (!function_exists('lc_call_logs_import_parse_rows')) {
                 'duration'      => $duration_raw,
                 'result'        => isset($map['result']) ? (string) ($line[$map['result']] ?? '') : '',
                 'providerCallId'=> isset($map['providerCallId']) ? (string) ($line[$map['providerCallId']] ?? '') : '',
-                'recordingUrl'  => isset($map['recordingUrl']) ? (string) ($line[$map['recordingUrl']] ?? '') : '',
+                'recordingUrl'  => $recording,
                 'importRow'     => $i + 1,
             );
 
             if ($payload['providerCallId'] === '') {
-                $payload['providerCallId'] = 'import-' . date('Ymd') . '-' . $i . '-' . substr(md5($virtual . $payload['caller'] . $payload['startedAt'] . $payload['duration']), 0, 10);
+                // 날짜/행번호 없이 내용 해시만 사용 → 같은 통화내역 재등록 시 중복으로 처리
+                $payload['providerCallId'] = 'import-' . substr(md5(
+                    $virtual . '|' . $payload['caller'] . '|' . $payload['callee'] . '|'
+                    . $payload['startedAt'] . '|' . $payload['duration'] . '|' . $payload['result']
+                ), 0, 16);
             }
 
             $rows[] = $payload;
@@ -2080,11 +2186,13 @@ if (!function_exists('lc_call_logs_import_parse_rows')) {
             return array('ok' => false, 'message' => '등록할 통화 데이터가 없습니다.');
         }
 
-        return array('ok' => true, 'message' => count($rows) . '건 파싱됨', 'rows' => $rows, 'headers' => $headers);
+        $suffix = $has_header ? '' : ' (헤더 없음 · 표준 열 순서 자동인식)';
+
+        return array('ok' => true, 'message' => count($rows) . '건 파싱됨' . $suffix, 'rows' => $rows, 'headers' => $headers);
     }
 
     /**
-     * CSV/TSV 텍스트(붙여넣기) → 매트릭스.
+     * CSV/TSV/공백구분 텍스트(붙여넣기) → 매트릭스.
      *
      * @return array<int,array<int,string>>
      */
@@ -2094,7 +2202,16 @@ if (!function_exists('lc_call_logs_import_parse_rows')) {
         if (strncmp($raw, "\xEF\xBB\xBF", 3) === 0) {
             $raw = substr($raw, 3);
         }
-        $delimiter = (substr_count($raw, "\t") > substr_count($raw, ',')) ? "\t" : ',';
+        $tab_count = substr_count($raw, "\t");
+        $comma_count = substr_count($raw, ',');
+        if ($tab_count > 0 && $tab_count >= $comma_count) {
+            $mode = 'tab';
+        } elseif ($comma_count > 0) {
+            $mode = 'comma';
+        } else {
+            $mode = 'space';
+        }
+
         $lines = preg_split('/\r\n|\r|\n/', $raw);
         $matrix = array();
         foreach ($lines as $line) {
@@ -2102,9 +2219,13 @@ if (!function_exists('lc_call_logs_import_parse_rows')) {
             if ($line === '') {
                 continue;
             }
-            $row = str_getcsv($line, $delimiter);
+            if ($mode === 'space') {
+                $row = preg_split('/\s+/u', $line, -1, PREG_SPLIT_NO_EMPTY);
+            } else {
+                $row = str_getcsv($line, $mode === 'tab' ? "\t" : ',');
+            }
             if ($row && implode('', $row) !== '') {
-                $matrix[] = $row;
+                $matrix[] = array_map('trim', $row);
             }
         }
 
@@ -2112,7 +2233,7 @@ if (!function_exists('lc_call_logs_import_parse_rows')) {
     }
 
     /**
-     * 붙여넣기 텍스트(xlsx 복사본·CSV·TSV)를 통화 ingest payload 배열로 변환.
+     * 붙여넣기 텍스트(xlsx 복사본·CSV·TSV·공백구분)를 통화 ingest payload 배열로 변환.
      *
      * @return array{ok:bool,message:string,rows?:array<int,array<string,mixed>>,headers?:array<int,string>}
      */
@@ -2229,8 +2350,185 @@ if (!function_exists('lc_call_logs_import_bulk')) {
             $summary['failed'],
             $summary['unmatched']
         );
+        if ($summary['imported'] === 0 && $summary['duplicate'] > 0 && $summary['failed'] === 0) {
+            $summary['message'] .= ' (이미 등록된 통화내역입니다. 아래 목록을 확인하세요)';
+        }
 
         return $summary;
+    }
+}
+
+if (!function_exists('lc_call_log_sync_peers')) {
+    /**
+     * @return array<int,string>
+     */
+    function lc_call_log_sync_peers()
+    {
+        if (!defined('LC_CALL_LOG_SYNC_PEERS')) {
+            return array();
+        }
+        $raw = trim((string) LC_CALL_LOG_SYNC_PEERS);
+        if ($raw === '') {
+            return array();
+        }
+        $parts = preg_split('/\s*,\s*/', $raw);
+        $out = array();
+        foreach ($parts as $p) {
+            $p = rtrim(trim((string) $p), '/');
+            if ($p !== '' && preg_match('#^https?://#i', $p)) {
+                $out[] = $p;
+            }
+        }
+
+        return array_values(array_unique($out));
+    }
+}
+
+if (!function_exists('lc_call_log_sync_secret_ok')) {
+    function lc_call_log_sync_secret_ok($given)
+    {
+        if (!defined('LC_CALL_LOG_SYNC_SECRET') || LC_CALL_LOG_SYNC_SECRET === '') {
+            return false;
+        }
+
+        return is_string($given) && $given !== '' && hash_equals((string) LC_CALL_LOG_SYNC_SECRET, $given);
+    }
+}
+
+if (!function_exists('lc_call_logs_sync_to_peers')) {
+    /**
+     * onoffcpa에서 통화내역 import 성공 시 자매 사이트(링크커넥트·트렌드허브)로 동일 rows 전송.
+     *
+     * @param array<int,array<string,mixed>> $rows
+     * @return array{ok:bool,enabled:bool,message?:string,peers:array<int,array<string,mixed>>}
+     */
+    function lc_call_logs_sync_to_peers(array $rows, $skip_conversion = false)
+    {
+        $out = array(
+            'ok'      => true,
+            'enabled' => false,
+            'peers'   => array(),
+            'message' => '',
+        );
+
+        if (!defined('LC_CALL_LOG_SYNC_ENABLED') || !LC_CALL_LOG_SYNC_ENABLED) {
+            return $out;
+        }
+        if (!function_exists('lc_call_is_onoffcpa_host') || !lc_call_is_onoffcpa_host()) {
+            return $out;
+        }
+        if (!$rows) {
+            return $out;
+        }
+
+        $peers = lc_call_log_sync_peers();
+        if (!$peers) {
+            return $out;
+        }
+
+        $secret = defined('LC_CALL_LOG_SYNC_SECRET') ? (string) LC_CALL_LOG_SYNC_SECRET : '';
+        if ($secret === '') {
+            return array(
+                'ok'      => false,
+                'enabled' => true,
+                'peers'   => array(),
+                'message' => 'LC_CALL_LOG_SYNC_SECRET 미설정',
+            );
+        }
+
+        $out['enabled'] = true;
+        $all_ok = true;
+        $chunks = array_chunk($rows, 150);
+        foreach ($peers as $base) {
+            $peer = array(
+                'url'       => $base,
+                'ok'        => true,
+                'message'   => '',
+                'total'     => 0,
+                'imported'  => 0,
+                'duplicate' => 0,
+                'failed'    => 0,
+                'unmatched' => 0,
+            );
+            foreach ($chunks as $chunk) {
+                $url = $base . '/plugin/linkconnect/api/call_logs_inbound.php';
+                $body = json_encode(array(
+                    'skipConversion' => $skip_conversion ? 1 : 0,
+                    'source'         => 'ONOFFCPA',
+                    'rows'           => array_values($chunk),
+                ), JSON_UNESCAPED_UNICODE);
+
+                if (!function_exists('curl_init')) {
+                    $peer['ok'] = false;
+                    $peer['message'] = 'curl 미지원';
+                    $all_ok = false;
+                    break;
+                }
+
+                $ch = curl_init($url);
+                if ($ch === false) {
+                    $peer['ok'] = false;
+                    $peer['message'] = 'curl init 실패';
+                    $all_ok = false;
+                    break;
+                }
+                curl_setopt_array($ch, array(
+                    CURLOPT_POST           => true,
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_HTTPHEADER     => array(
+                        'Content-Type: application/json',
+                        'Accept: application/json',
+                        'X-LC-Call-Sync-Secret: ' . $secret,
+                    ),
+                    CURLOPT_POSTFIELDS     => $body,
+                    CURLOPT_TIMEOUT        => 90,
+                    CURLOPT_CONNECTTIMEOUT => 8,
+                ));
+                $resp = curl_exec($ch);
+                $errno = curl_errno($ch);
+                $err = curl_error($ch);
+                $http = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                curl_close($ch);
+
+                if ($errno) {
+                    $peer['ok'] = false;
+                    $peer['message'] = 'curl: ' . $err;
+                    $all_ok = false;
+                    break;
+                }
+                $decoded = json_decode((string) $resp, true);
+                if ($http < 200 || $http >= 300 || !is_array($decoded) || empty($decoded['ok'])) {
+                    $peer['ok'] = false;
+                    $msg = is_array($decoded) ? (string) ($decoded['error'] ?? $decoded['message'] ?? '') : '';
+                    $peer['message'] = $msg !== '' ? $msg : ('HTTP ' . $http);
+                    $all_ok = false;
+                    break;
+                }
+                $data = isset($decoded['data']) && is_array($decoded['data']) ? $decoded['data'] : $decoded;
+                $peer['total'] += (int) ($data['total'] ?? count($chunk));
+                $peer['imported'] += (int) ($data['imported'] ?? 0);
+                $peer['duplicate'] += (int) ($data['duplicate'] ?? 0);
+                $peer['failed'] += (int) ($data['failed'] ?? 0);
+                $peer['unmatched'] += (int) ($data['unmatched'] ?? 0);
+                $peer['message'] = sprintf(
+                    '신규 %d · 중복 %d · 실패 %d',
+                    $peer['imported'],
+                    $peer['duplicate'],
+                    $peer['failed']
+                );
+            }
+            $out['peers'][] = $peer;
+        }
+
+        $out['ok'] = $all_ok;
+        $bits = array();
+        foreach ($out['peers'] as $p) {
+            $host = (string) (parse_url((string) $p['url'], PHP_URL_HOST) ?: $p['url']);
+            $bits[] = $host . ($p['ok'] ? (' ' . $p['message']) : (' 실패:' . $p['message']));
+        }
+        $out['message'] = $bits ? implode(' / ', $bits) : '';
+
+        return $out;
     }
 }
 
@@ -2278,7 +2576,7 @@ if (!function_exists('lc_call_logs_list')) {
             LEFT JOIN `{$cp}` c ON c.cp_id = l.cp_id
             LEFT JOIN `{$pt}` p ON p.pt_id = l.pt_id
             WHERE {$where}
-            ORDER BY l.clog_id DESC LIMIT {$limit} ";
+            ORDER BY l.clog_started_at DESC, l.clog_id DESC LIMIT {$limit} ";
         $result = lc_sql_query($sql, false);
         if ($result) {
             while ($row = sql_fetch_array($result)) {
@@ -2371,18 +2669,117 @@ if (!function_exists('lc_call_request_to_api')) {
     }
 }
 
+if (!function_exists('lc_call_is_onoffcpa_host')) {
+    /**
+     * 미매칭 발신번호 원문 열람 허용 호스트 (onoffcpa 전용).
+     * LC_ONOFFCPA_PUBLIC_URL 상수는 사이트마다 덮어쓸 수 있어 하드코딩 허용 목록만 사용.
+     */
+    function lc_call_is_onoffcpa_host()
+    {
+        $allowed = array('onoffcpa.icrm.co.kr', 'onoffcpa.iwinv.net');
+        $http_host = isset($_SERVER['HTTP_HOST']) ? strtolower((string) $_SERVER['HTTP_HOST']) : '';
+        $http_host = preg_replace('/:\d+$/', '', $http_host);
+
+        return $http_host !== '' && in_array($http_host, $allowed, true);
+    }
+}
+
+if (!function_exists('lc_call_can_view_unmasked_unmatched_caller')) {
+    /**
+     * 미매칭 발신번호 원문 열람: onoffcpa 최고관리자만.
+     */
+    function lc_call_can_view_unmasked_unmatched_caller()
+    {
+        return function_exists('lc_is_super_admin')
+            && lc_is_super_admin()
+            && lc_call_is_onoffcpa_host();
+    }
+}
+
+if (!function_exists('lc_call_mask_caller_privacy')) {
+    /**
+     * 미매칭 발신번호 마스킹: 중간 2자리 + 뒷 2자리를 ** 로 처리.
+     * 예: 1075768091 → 1075**80**
+     */
+    function lc_call_mask_caller_privacy($phone)
+    {
+        $raw = trim((string) $phone);
+        if ($raw === '') {
+            return '';
+        }
+        // 이미 마스킹된 값이면 그대로
+        if (strpos($raw, '*') !== false) {
+            return $raw;
+        }
+        $digits = preg_replace('/[^0-9]/', '', $raw);
+        if ($digits === '') {
+            return $raw;
+        }
+        $len = strlen($digits);
+        if ($len <= 4) {
+            return str_repeat('*', $len);
+        }
+
+        $chars = str_split($digits);
+        // 뒷번호 2자리
+        $chars[$len - 1] = '*';
+        $chars[$len - 2] = '*';
+        // 중간번호 2자리 (마지막 2자리와 겹치지 않게)
+        $mid_start = (int) floor(($len - 2) / 2);
+        if ($mid_start < 0) {
+            $mid_start = 0;
+        }
+        if ($mid_start > $len - 4) {
+            $mid_start = max(0, $len - 4);
+        }
+        $chars[$mid_start] = '*';
+        $chars[$mid_start + 1] = '*';
+
+        return implode('', $chars);
+    }
+}
+
+if (!function_exists('lc_call_mask_caller_last4')) {
+    /**
+     * @deprecated lc_call_mask_caller_privacy 사용. 호환용 별칭.
+     */
+    function lc_call_mask_caller_last4($phone)
+    {
+        return lc_call_mask_caller_privacy($phone);
+    }
+}
+
 if (!function_exists('lc_call_log_to_api')) {
     /**
      * @param bool $with_recording 관리자만 true (녹취 노출)
+     * @param bool $mask true면 파트너용 전면 마스킹. false여도 미매칭은 onoffcpa 최고관리자 외 중간2+뒷2 마스킹.
      */
     function lc_call_log_to_api(array $row, $with_recording = false, $mask = true)
     {
         $caller = (string) $row['clog_caller'];
+        $pt_id = (int) ($row['pt_id'] ?? 0);
+        $is_unmatched = $pt_id <= 0;
+        $caller_masked = false;
+
+        if ($mask) {
+            $caller_out = function_exists('lc_conversion_mask_phone')
+                ? lc_conversion_mask_phone($caller)
+                : lc_call_mask_caller_last4($caller);
+            $caller_masked = true;
+        } elseif ($is_unmatched && !lc_call_can_view_unmasked_unmatched_caller()) {
+            $caller_out = lc_call_mask_caller_last4($caller);
+            $caller_masked = true;
+        } else {
+            $caller_out = $caller;
+        }
+
         $virtual = lc_call_number_normalize((string) ($row['clog_virtual_number'] ?? ''));
         $out = array(
             'clogId'        => (int) $row['clog_id'],
             'virtualNumber' => $virtual !== '' ? lc_call_number_format($virtual) : '',
-            'caller'        => $mask ? lc_conversion_mask_phone($caller) : $caller,
+            'caller'        => $caller_out,
+            'callerMasked'  => $caller_masked,
+            'unmatched'     => $is_unmatched,
             'campaign'      => (string) ($row['cp_name'] ?? ''),
             'partner'       => (string) ($row['pt_code'] ?? '-'),
             'startedAt'     => !empty($row['clog_started_at']) ? date('Y.m.d H:i', strtotime($row['clog_started_at'])) : '',
