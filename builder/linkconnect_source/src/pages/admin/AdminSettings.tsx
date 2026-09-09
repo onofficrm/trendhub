@@ -7,7 +7,7 @@ import type { AdminSettingsResponse } from '../../lib/api';
 type RawSettings = Record<string, string>;
 
 const defaultRaw: RawSettings = {
-  siteName: '트랜드허브',
+  siteName: '온오프CPA',
   siteStatus: 'active',
   adminEmail: 'admin@linkconnect.com',
   supportPhone: '1588-0000',
@@ -46,7 +46,7 @@ const defaultRaw: RawSettings = {
   callWebhookTokenSet: '0',
   callDefaultPrice: '0',
   callMinDuration: '0',
-  callCreateOnMissed: '0',
+  callCreateOnMissed: '1',
   callRecordingMode: 'normal',
 };
 
@@ -216,14 +216,14 @@ export function AdminSettings() {
 
   if (loading) {
     return (
-      <AdminLayout activeMenu="settings" title="환경설정" description="트랜드허브의 운영 정책과 시스템 기본값을 설정하세요.">
+      <AdminLayout activeMenu="settings" title="환경설정" description="온오프CPA의 운영 정책과 시스템 기본값을 설정하세요.">
         <div className="text-slate-500">설정을 불러오는 중...</div>
       </AdminLayout>
     );
   }
 
   return (
-    <AdminLayout activeMenu="settings" title="환경설정" description="트랜드허브의 운영 정책과 시스템 기본값을 설정하세요.">
+    <AdminLayout activeMenu="settings" title="환경설정" description="온오프CPA의 운영 정책과 시스템 기본값을 설정하세요.">
       {error && <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
       <div className="max-w-4xl mx-auto space-y-6">

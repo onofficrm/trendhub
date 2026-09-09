@@ -7,10 +7,10 @@ if (!function_exists('lc_settings_defaults')) {
     function lc_settings_defaults()
     {
         return array(
-            'siteName'              => '트랜드허브',
+            'siteName'              => '온오프CPA',
             'siteStatus'            => 'active',
-            'adminEmail'            => 'help@trendhub.iwinv.net',
-            'supportEmail'          => 'help@trendhub.iwinv.net',
+            'adminEmail'            => 'help@onoffcpa.com',
+            'supportEmail'          => 'help@onoffcpa.com',
             'supportPhone'          => '070-8098-6824',
             'timezone'              => 'Asia/Seoul',
             'duplicateDays'         => 30,
@@ -77,7 +77,7 @@ if (!function_exists('lc_settings_defaults')) {
             'callWebhookToken'      => '',
             'callDefaultPrice'      => 0,
             'callMinDuration'       => 0,
-            'callCreateOnMissed'    => '0',
+            'callCreateOnMissed'    => '1',
             'callRecordingMode'     => 'normal',
             // 링크프라이스 CPS (외부 네트워크 — CPA와 분리)
             'lpEnabled'             => '0',
