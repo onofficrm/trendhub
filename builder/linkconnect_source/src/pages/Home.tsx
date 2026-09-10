@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
 import { AdvertiserIntro } from '../components/AdvertiserIntro';
-import { CategoryLinks } from '../components/CategoryLinks';
 import { CPAList } from '../components/CPAList';
 import { EventBoard } from '../components/EventBoard';
 import { Features } from '../components/Features';
@@ -20,7 +19,6 @@ export function Home() {
   return (
     <main>
       <Hero />
-      <CategoryLinks />
       <CPAList />
       <Features />
       <PartnerIntro />
