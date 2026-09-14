@@ -438,7 +438,18 @@ if (!function_exists('lc_conversion_to_api_merchant')) {
             ? lc_conversion_resolve_inflow_meta($row, 'mask')
             : array();
 
-        return array(
+        $attachment_meta = function_exists('lc_conversion_attachment_api_meta')
+            ? lc_conversion_attachment_api_meta($row)
+            : array(
+                'attachmentName'        => '',
+                'attachmentMime'        => '',
+                'attachmentUrl'         => '',
+                'attachmentDownloadUrl' => '',
+                'attachmentPreviewable' => false,
+                'attachmentStored'      => false,
+            );
+
+        return array_merge(array(
             'id'          => (string) $row['cv_code'],
             'cvId'        => (int) $row['cv_id'],
             'date'        => date('Y.m.d H:i', strtotime($row['cv_created_at'])),
@@ -477,7 +488,7 @@ if (!function_exists('lc_conversion_to_api_merchant')) {
             'adminComment'     => '',
             'partnerPublic'    => !isset($row['cv_partner_visible']) || (int) $row['cv_partner_visible'] === 1,
             'history'     => lc_conversion_merchant_history($row),
-        );
+        ), $attachment_meta);
     }
 }
 
@@ -1864,6 +1875,10 @@ if (!function_exists('lc_conversion_to_inspection_api')) {
             : trim((string) ($row['cv_page_url'] ?? ''));
         $source = (string) ($row['cv_source'] ?? 'form');
         $channel = (string) ($row['cv_channel'] ?? '');
+        $phone = trim((string) ($row['cv_phone'] ?? ''));
+        if ($phone !== '' && function_exists('lc_conversion_format_phone')) {
+            $phone = lc_conversion_format_phone($phone);
+        }
 
         return array(
             'id'              => (string) $row['cv_code'],
@@ -1873,8 +1888,8 @@ if (!function_exists('lc_conversion_to_inspection_api')) {
             'campaign'        => (string) ($row['cp_name'] ?? ''),
             'advertiser'      => (string) ($row['mt_company'] ?? ''),
             'partner'         => (string) ($row['pt_name'] ?? '') . ' (' . (string) ($row['pt_code'] ?? '') . ')',
-            'customer'        => lc_conversion_mask_name($row['cv_name']),
-            'phone'           => lc_conversion_mask_phone($row['cv_phone']),
+            'customer'        => (string) ($row['cv_name'] ?? ''),
+            'phone'           => $phone,
             'inquiry'         => (string) ($row['cv_inquiry'] ?? ''),
             'reason'          => (string) ($row['cv_reject_reason'] !== '' ? $row['cv_reject_reason'] : $row['cv_comment']),
             'comment'         => (string) $row['cv_comment'],

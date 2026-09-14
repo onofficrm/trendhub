@@ -761,6 +761,9 @@ export type AdminConversion = {
   partner: string;
   advertiser: string;
   customer: string;
+  phone?: string;
+  email?: string;
+  inquiry?: string;
   channel?: string;
   source?: string;
   subId?: string;

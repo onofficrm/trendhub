@@ -194,6 +194,16 @@ if (!function_exists('lc_settlement_request')) {
             st_requested_at = NOW() ", false);
 
         $st_id = (int) lc_sql_insert_id();
+
+        // Keep partner profile bank in sync for admin partner detail
+        $pt_table = lc_table('partners');
+        lc_sql_query(" UPDATE `{$pt_table}` SET
+            pt_bank_name = '" . lc_sql_escape($bank_name) . "',
+            pt_bank_account = '" . lc_sql_escape($bank_account) . "',
+            pt_bank_holder = '" . lc_sql_escape($bank_holder) . "',
+            pt_updated_at = NOW()
+            WHERE pt_id = '{$pt_id}' ", false);
+
         $row = lc_settlement_get_by_id($st_id);
 
         return array(
@@ -289,9 +299,8 @@ if (!function_exists('lc_settlement_to_admin_api')) {
         }
 
         $account = (string) $row['st_bank_account'];
-        if (strlen($account) > 6) {
-            $account = substr($account, 0, 3) . '-***-' . substr($account, -3);
-        }
+        // Admin settlement API always returns full account (endpoint is admin-gated).
+        // Keep soft mask only when explicitly requested by non-admin callers (none today).
 
         return array(
             'id'             => (int) $row['st_id'],
