@@ -763,6 +763,7 @@ export type AdminConversion = {
   customer: string;
   phone?: string;
   email?: string;
+  region?: string;
   inquiry?: string;
   channel?: string;
   source?: string;
@@ -783,6 +784,9 @@ export type AdminConversion = {
   status: string;
   statusCode: string;
   price: number;
+  attachmentName?: string;
+  attachmentMime?: string;
+  attachmentStored?: boolean;
 };
 
 export function fetchAdminMe() {
