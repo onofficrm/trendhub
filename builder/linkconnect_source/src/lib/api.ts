@@ -269,6 +269,10 @@ export type PartnerConversion = {
   status: string;
   statusCode: string;
   price: number;
+  callDuration?: number;
+  callResult?: string;
+  callResultLabel?: string;
+  virtualNumber?: string;
   estRevenue: number;
   confRevenue: number;
   comment: string;
@@ -756,6 +760,9 @@ export type AdminPendingCharge = {
 export type AdminConversion = {
   id: string;
   cvId: number;
+  callLogId?: number;
+  isCallLogOnly?: boolean;
+  createdAt?: string;
   date: string;
   campaign: string;
   partner: string;
@@ -975,7 +982,7 @@ export function updateAdminCharge(payload: { action: 'approve' | 'reject'; wtId:
 export function fetchAdminConversions(filters?: { status?: string; source?: string }) {
   return adminApiGet<{
     items: AdminConversion[];
-    summary: { todayReceived: number; approved: number; rejected: number; pending: number };
+    summary: { todayReceived: number; approved: number; rejected: number; pending: number; callUncreated?: number };
     total: number;
     dbReady: boolean;
   }>('conversions.php', {
