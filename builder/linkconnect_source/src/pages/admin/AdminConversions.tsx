@@ -151,7 +151,7 @@ export function AdminConversions() {
                 <th className="px-4 py-3 text-left">접수일</th>
                 <th className="px-4 py-3 text-left">고객</th>
                 <th className="px-4 py-3 text-left">연락처</th>
-                <th className="px-4 py-3 text-left">파트너</th>
+                <th className="px-4 py-3 text-left">파트너 아이디</th>
                 <th className="px-4 py-3 text-left">유입경로</th>
                 <th className="px-4 py-3 text-left">광고주</th>
                 <th className="px-4 py-3 text-left">상품</th>
@@ -196,7 +196,12 @@ export function AdminConversions() {
                       </button>
                     </td>
                       <td className="px-4 py-3 font-mono text-xs text-slate-800 whitespace-nowrap">{row.phone || '-'}</td>
-                      <td className="px-4 py-3 font-mono text-xs">{row.partner}</td>
+                      <td className="px-4 py-3">
+                      <div className="font-mono text-xs text-slate-800">{row.partner || '-'}</div>
+                      {row.partnerMemberId && row.partnerCode ? (
+                        <div className="text-[10px] text-slate-400 font-mono mt-0.5">{row.partnerCode}</div>
+                      ) : null}
+                    </td>
                       <td className="px-4 py-3">
                         <ConversionInflowCell data={row} showAbuse />
                       </td>
@@ -343,8 +348,11 @@ export function AdminConversions() {
                     <div className="font-medium text-slate-900">{selectedDb.advertiser || '-'}</div>
                   </div>
                   <div>
-                    <div className="text-slate-400 mb-1">파트너</div>
+                    <div className="text-slate-400 mb-1">파트너 아이디</div>
                     <div className="font-medium font-mono text-slate-900">{selectedDb.partner || '-'}</div>
+                    {selectedDb.partnerCode ? (
+                      <div className="text-xs text-slate-400 font-mono mt-1">코드 {selectedDb.partnerCode}</div>
+                    ) : null}
                   </div>
                   <div>
                     <div className="text-slate-400 mb-1">채널 / 출처</div>

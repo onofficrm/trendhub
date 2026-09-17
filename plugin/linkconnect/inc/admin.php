@@ -371,7 +371,7 @@ if (!function_exists('lc_admin_list_conversions')) {
         $click_meta = function_exists('lc_conversion_click_meta_select_sql')
             ? lc_conversion_click_meta_select_sql()
             : " '' AS cl_referer, '' AS cl_user_agent, '' AS cl_ip ";
-        $sql = " SELECT cv.*, c.cp_name, c.cp_landing_url, c.cp_tracking_base_url, p.pt_code, m.mt_company, lk.lk_code,
+        $sql = " SELECT cv.*, c.cp_name, c.cp_landing_url, c.cp_tracking_base_url, p.pt_code, p.mb_id AS pt_mb_id, m.mt_company, lk.lk_code,
             {$click_meta}
             FROM `{$cv_table}` cv
             INNER JOIN `{$cp_table}` c ON c.cp_id = cv.cp_id
@@ -394,6 +394,34 @@ if (!function_exists('lc_admin_list_conversions')) {
     }
 }
 
+if (!function_exists('lc_admin_partner_id_fields')) {
+    /**
+     * 관리자 디비목록용 파트너 표시값.
+     * 파트너 아이디(mb_id)를 우선하고, 없으면 파트너 코드(pt_code)로 폴백.
+     *
+     * @param array<string,mixed> $row
+     * @return array{partner:string,partnerCode:string,partnerMemberId:string}
+     */
+    function lc_admin_partner_id_fields(array $row)
+    {
+        $code = trim((string) ($row['pt_code'] ?? ''));
+        $member_id = trim((string) ($row['pt_mb_id'] ?? ''));
+        if ($member_id === '') {
+            // partners 테이블 단독 row 등 별칭 없는 경우만 mb_id 사용
+            if (array_key_exists('pt_code', $row) && array_key_exists('mb_id', $row) && !array_key_exists('cv_code', $row) && !array_key_exists('clog_id', $row)) {
+                $member_id = trim((string) $row['mb_id']);
+            }
+        }
+        $display = $member_id !== '' ? $member_id : ($code !== '' ? $code : '-');
+
+        return array(
+            'partner'         => $display,
+            'partnerCode'     => $code !== '' ? $code : '',
+            'partnerMemberId' => $member_id !== '' ? $member_id : '',
+        );
+    }
+}
+
 if (!function_exists('lc_admin_conversion_to_api')) {
     function lc_admin_conversion_to_api(array $row)
     {
@@ -412,13 +440,17 @@ if (!function_exists('lc_admin_conversion_to_api')) {
             ? lc_conversion_attachment_api_meta($row)
             : array();
 
+        $partner_fields = lc_admin_partner_id_fields($row);
+
         return array(
             'id'          => (string) $row['cv_code'],
             'cvId'        => (int) $row['cv_id'],
             'createdAt'   => (string) ($row['cv_created_at'] ?? ''),
             'date'        => date('m.d H:i', strtotime($row['cv_created_at'])),
             'campaign'    => (string) ($row['cp_name'] ?? ''),
-            'partner'     => (string) ($row['pt_code'] ?? '-'),
+            'partner'     => $partner_fields['partner'],
+            'partnerCode' => $partner_fields['partnerCode'],
+            'partnerMemberId' => $partner_fields['partnerMemberId'],
             'advertiser'  => (string) ($row['mt_company'] ?? '-'),
             'customer'    => (string) $row['cv_name'],
             'phone'       => $phone,
@@ -469,7 +501,7 @@ if (!function_exists('lc_admin_list_call_log_only_conversions')) {
         $mt_table = lc_table('merchants');
         $limit = max(1, min(5000, (int) $limit));
 
-        $sql = " SELECT l.*, c.cp_name, p.pt_code, m.mt_company
+        $sql = " SELECT l.*, c.cp_name, p.pt_code, p.mb_id AS pt_mb_id, m.mt_company
             FROM `{$clog}` l
             LEFT JOIN `{$cp_table}` c ON c.cp_id = l.cp_id
             LEFT JOIN `{$pt_table}` p ON p.pt_id = l.pt_id
@@ -525,6 +557,8 @@ if (!function_exists('lc_admin_call_log_only_conversion_to_api')) {
             $price = (int) ($check['advertiserPrice'] ?? $check['price'] ?? 0);
         }
 
+        $partner_fields = lc_admin_partner_id_fields($row);
+
         return array(
             'id'            => 'CALL-' . (int) ($row['clog_id'] ?? 0),
             'cvId'          => 0,
@@ -533,7 +567,9 @@ if (!function_exists('lc_admin_call_log_only_conversion_to_api')) {
             'createdAt'     => $created_at,
             'date'          => $created_at !== '' ? date('m.d H:i', strtotime($created_at)) : '',
             'campaign'      => (string) ($row['cp_name'] ?? ''),
-            'partner'       => (string) ($row['pt_code'] ?? '-'),
+            'partner'       => $partner_fields['partner'],
+            'partnerCode'   => $partner_fields['partnerCode'],
+            'partnerMemberId' => $partner_fields['partnerMemberId'],
             'advertiser'    => (string) ($row['mt_company'] ?? '-'),
             'customer'      => '콜인입',
             'phone'         => $caller,
@@ -601,7 +637,7 @@ if (!function_exists('lc_admin_conversions_export_csv')) {
         $rows = lc_admin_list_conversions($filters, $limit);
         $lines = array();
         $lines[] = lc_csv_row(array(
-            'DB ID', '접수일시', '고객명', '연락처', '파트너', '광고주', '상품',
+            'DB ID', '접수일시', '고객명', '연락처', '파트너 아이디', '광고주', '상품',
             '출처', '채널', '설치URL', '설치호스트', 'Referer',
             'UTM Source', 'UTM Medium', 'UTM Campaign', '상태', '단가',
         ));
@@ -617,12 +653,13 @@ if (!function_exists('lc_admin_conversions_export_csv')) {
             $source_label = function_exists('lc_embed_source_label')
                 ? lc_embed_source_label($source, $channel)
                 : $source;
+            $partner_fields = lc_admin_partner_id_fields($row);
             $lines[] = lc_csv_row(array(
                 (string) ($row['cv_code'] ?? ''),
                 (string) ($row['cv_created_at'] ?? ''),
                 (string) ($row['cv_name'] ?? ''),
                 (string) ($row['cv_phone'] ?? ''),
-                (string) ($row['pt_code'] ?? ''),
+                $partner_fields['partner'],
                 (string) ($row['mt_company'] ?? ''),
                 (string) ($row['cp_name'] ?? ''),
                 $source_label,

@@ -778,6 +778,10 @@ export type AdminConversion = {
   date: string;
   campaign: string;
   partner: string;
+  /** 파트너 코드 (PTN-XXXX) */
+  partnerCode?: string;
+  /** 파트너 로그인 아이디 (mb_id) */
+  partnerMemberId?: string;
   advertiser: string;
   customer: string;
   phone?: string;
