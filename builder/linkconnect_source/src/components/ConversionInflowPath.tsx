@@ -53,6 +53,8 @@ export function buildInflowSummary(data: ConversionInflowData) {
       parts.push(`${m}분 ${s}초`);
     }
     if (data.callResultLabel) parts.push(data.callResultLabel);
+    else if (data.callResult) parts.push(data.callResult);
+    if (data.virtualNumber) parts.push(`가상 ${data.virtualNumber}`);
     return parts.join(' · ');
   }
   if (data.channel) parts.push(data.channel);
@@ -285,7 +287,13 @@ export function ConversionInflowCell({
   const [open, setOpen] = useState(false);
   const titleId = useId();
   const embed = isEmbed(data.source, data.channel);
+  const isCall = data.source === 'call' || !!data.isCallLogOnly;
   const summary = buildInflowSummary(data);
+  const callDurationLabel =
+    typeof data.callDuration === 'number' && data.callDuration >= 0
+      ? `${Math.floor(data.callDuration / 60)}분 ${data.callDuration % 60}초`
+      : '';
+  const callResult = data.callResultLabel || data.callResult || '';
 
   const openModal = (e: MouseEvent) => {
     e.preventDefault();
@@ -294,7 +302,7 @@ export function ConversionInflowCell({
   };
 
   return (
-    <div className="min-w-[160px] max-w-[260px]" onClick={(e) => e.stopPropagation()}>
+    <div className="min-w-[160px] max-w-[280px]" onClick={(e) => e.stopPropagation()}>
       <button
         type="button"
         onClick={openModal}
@@ -303,12 +311,24 @@ export function ConversionInflowCell({
       >
         <div className="flex items-start gap-1">
           <div className="min-w-0 flex-1 space-y-0.5">
-            <div className="text-slate-700 text-xs font-medium truncate group-hover:text-cyan-700">{summary}</div>
+            {isCall ? (
+              <>
+                <div className="text-violet-700 text-xs font-semibold truncate group-hover:text-violet-900">
+                  콜디비{callDurationLabel ? ` · ${callDurationLabel}` : ''}
+                  {callResult ? ` · ${callResult}` : ''}
+                </div>
+                {data.virtualNumber ? (
+                  <div className="text-[10px] text-slate-400 font-mono truncate">가상 {data.virtualNumber}</div>
+                ) : null}
+              </>
+            ) : (
+              <div className="text-slate-700 text-xs font-medium truncate group-hover:text-cyan-700">{summary}</div>
+            )}
             <div className="flex flex-wrap gap-1">
               {embed ? (
                 <span className="inline-flex px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-700 text-[10px] font-bold">외부위젯</span>
               ) : null}
-              {data.source === 'call' ? (
+              {isCall ? (
                 <span className="inline-flex px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 text-[10px] font-bold">콜디비</span>
               ) : null}
               {data.utmSource ? (
