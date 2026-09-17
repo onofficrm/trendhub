@@ -29,6 +29,29 @@ if (!function_exists('lc_conversion_mask_phone')) {
     }
 }
 
+if (!function_exists('lc_conversion_phone_last4')) {
+    /** 콜디비 고객명 표기용: 전화번호 뒤 4자리 */
+    function lc_conversion_phone_last4($phone)
+    {
+        $digits = preg_replace('/[^0-9]/', '', (string) $phone);
+        if ($digits === '') {
+            return '';
+        }
+        if (strlen($digits) <= 4) {
+            return $digits;
+        }
+        return substr($digits, -4);
+    }
+}
+
+if (!function_exists('lc_conversion_call_customer_name')) {
+    function lc_conversion_call_customer_name($phone, $fallback = '콜인입')
+    {
+        $last4 = lc_conversion_phone_last4($phone);
+        return $last4 !== '' ? $last4 : (string) $fallback;
+    }
+}
+
 if (!function_exists('lc_conversion_mask_ip')) {
     /** 광고주/파트너용 IP 마스킹 */
     function lc_conversion_mask_ip($ip)
@@ -452,13 +475,19 @@ if (!function_exists('lc_conversion_to_api_merchant')) {
                 'attachmentStored'      => false,
             );
 
+        $source = (string) ($row['cv_source'] ?? 'form');
+        $is_call = strtolower($source) === 'call';
+        $display_name = $is_call
+            ? lc_conversion_call_customer_name($raw_phone)
+            : (string) ($row['cv_name'] ?? '');
+
         return array_merge(array(
             'id'          => (string) $row['cv_code'],
             'cvId'        => (int) $row['cv_id'],
             'createdAt'   => (string) ($row['cv_created_at'] ?? ''),
             'date'        => date('Y.m.d H:i', strtotime($row['cv_created_at'])),
             'campaign'    => (string) ($row['cp_name'] ?? ''),
-            'name'        => (string) $row['cv_name'],
+            'name'        => $display_name,
             'phone'       => $phone,
             'email'       => (string) ($row['cv_email'] ?? ''),
             'region'      => (string) ($row['cv_region'] ?? ''),
@@ -472,7 +501,7 @@ if (!function_exists('lc_conversion_to_api_merchant')) {
             'comment'     => (string) $row['cv_comment'],
             'needsAction' => lc_conversion_needs_action($status),
             'channel'     => $channel,
-            'source'      => (string) ($row['cv_source'] ?? 'form'),
+            'source'      => $source,
             'subId'       => (string) ($inflow['subId'] ?? $row['cv_sub_id'] ?? ''),
             'pageUrl'     => $page_url,
             'pageHost'    => lc_conversion_page_host($page_url),
@@ -690,7 +719,7 @@ if (!function_exists('lc_conversion_call_log_only_to_api')) {
             'createdAt'     => $created_at,
             'date'          => $created_at !== '' ? date('Y.m.d H:i', strtotime($created_at)) : '',
             'campaign'      => (string) ($row['cp_name'] ?? ''),
-            'name'          => '콜인입',
+            'name'          => lc_conversion_call_customer_name($caller),
             'phone'         => $phone,
             'email'         => '',
             'region'        => '',
@@ -1660,6 +1689,10 @@ if (!function_exists('lc_conversion_to_api_partner')) {
             ? lc_call_number_format($virtual_raw)
             : $virtual_raw;
         $is_call = strtolower($source) === 'call' || $call_log_id > 0 || $call_duration > 0 || $call_result !== '';
+        $raw_phone = (string) ($row['cv_phone'] ?? '');
+        $display_name = $is_call
+            ? lc_conversion_call_customer_name($raw_phone)
+            : lc_conversion_mask_name($row['cv_name'] ?? '');
 
         return array(
             'id'          => (string) $row['cv_code'],
@@ -1667,8 +1700,8 @@ if (!function_exists('lc_conversion_to_api_partner')) {
             'createdAt'   => (string) ($row['cv_created_at'] ?? ''),
             'date'        => date('Y.m.d H:i', strtotime($row['cv_created_at'])),
             'campaign'    => (string) ($row['cp_name'] ?? ''),
-            'name'        => lc_conversion_mask_name($row['cv_name']),
-            'phone'       => lc_conversion_mask_phone($row['cv_phone']),
+            'name'        => $display_name,
+            'phone'       => lc_conversion_mask_phone($raw_phone),
             'channel'     => (string) $row['cv_channel'],
             'source'      => $source,
             'subId'       => (string) ($inflow['subId'] ?? $row['cv_sub_id'] ?? ''),

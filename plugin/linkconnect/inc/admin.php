@@ -455,6 +455,11 @@ if (!function_exists('lc_admin_conversion_to_api')) {
             : array();
 
         $partner_fields = lc_admin_partner_id_fields($row);
+        $source = (string) ($row['cv_source'] ?? 'form');
+        $is_call = strtolower($source) === 'call';
+        $customer = $is_call && function_exists('lc_conversion_call_customer_name')
+            ? lc_conversion_call_customer_name((string) ($row['cv_phone'] ?? ''))
+            : (string) ($row['cv_name'] ?? '');
 
         return array(
             'id'          => (string) $row['cv_code'],
@@ -467,13 +472,13 @@ if (!function_exists('lc_admin_conversion_to_api')) {
             'partnerCode' => $partner_fields['partnerCode'],
             'partnerMemberId' => $partner_fields['partnerMemberId'],
             'advertiser'  => (string) ($row['mt_company'] ?? '-'),
-            'customer'    => (string) $row['cv_name'],
+            'customer'    => $customer,
             'phone'       => $phone,
             'email'       => (string) ($row['cv_email'] ?? ''),
             'region'      => (string) ($row['cv_region'] ?? ''),
             'inquiry'     => (string) ($row['cv_inquiry'] ?? ''),
             'channel'     => (string) ($row['cv_channel'] ?? ''),
-            'source'      => (string) ($row['cv_source'] ?? 'form'),
+            'source'      => $source,
             'subId'       => (string) ($inflow['subId'] ?? $row['cv_sub_id'] ?? ''),
             'pageUrl'     => $page_url,
             'pageHost'    => $page_host,
@@ -587,7 +592,9 @@ if (!function_exists('lc_admin_call_log_only_conversion_to_api')) {
             'partnerCode'   => $partner_fields['partnerCode'],
             'partnerMemberId' => $partner_fields['partnerMemberId'],
             'advertiser'    => (string) ($row['mt_company'] ?? '-'),
-            'customer'      => '콜인입',
+            'customer'      => function_exists('lc_conversion_call_customer_name')
+                ? lc_conversion_call_customer_name((string) ($row['clog_caller'] ?? ''))
+                : '콜인입',
             'phone'         => $caller,
             'email'         => '',
             'region'        => '',
