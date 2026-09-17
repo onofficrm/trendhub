@@ -20,6 +20,11 @@ export type ConversionInflowData = {
   userAgent?: string;
   abuseScore?: number;
   isDuplicate?: boolean;
+  callDuration?: number | null;
+  callResult?: string | null;
+  callResultLabel?: string | null;
+  virtualNumber?: string | null;
+  isCallLogOnly?: boolean;
 };
 
 function isEmbed(source?: string, channel?: string) {
@@ -40,6 +45,16 @@ function refererHost(referer?: string) {
 
 export function buildInflowSummary(data: ConversionInflowData) {
   const parts: string[] = [];
+  if (data.source === 'call' || data.isCallLogOnly) {
+    parts.push('콜디비');
+    if (typeof data.callDuration === 'number' && data.callDuration >= 0) {
+      const m = Math.floor(data.callDuration / 60);
+      const s = data.callDuration % 60;
+      parts.push(`${m}분 ${s}초`);
+    }
+    if (data.callResultLabel) parts.push(data.callResultLabel);
+    return parts.join(' · ');
+  }
   if (data.channel) parts.push(data.channel);
   if (data.device) parts.push(data.device);
   const host = data.pageHost || refererHost(data.referer);
@@ -67,9 +82,32 @@ export function ConversionInflowDetails({
   showAbuse?: boolean;
 }) {
   const embed = isEmbed(data.source, data.channel);
+  const isCall = data.source === 'call' || !!data.isCallLogOnly;
+  const callDurationLabel =
+    typeof data.callDuration === 'number' && data.callDuration >= 0
+      ? `${Math.floor(data.callDuration / 60)}분 ${data.callDuration % 60}초`
+      : '';
 
   return (
     <div className="space-y-3">
+      {isCall ? (
+        <div className="rounded-xl border border-violet-100 bg-violet-50/60 p-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="통화시간">
+            <span className="font-semibold text-violet-800">{callDurationLabel || '-'}</span>
+          </Field>
+          <Field label="통화결과">
+            <span className="font-medium text-violet-800">{data.callResultLabel || data.callResult || '-'}</span>
+          </Field>
+          <Field label="가상번호">
+            <span className="font-mono text-violet-800">{data.virtualNumber || '-'}</span>
+          </Field>
+          <Field label="구분">
+            <span className="inline-flex px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 text-[10px] font-bold">
+              {data.isCallLogOnly ? '콜디비 통화로그' : '콜디비'}
+            </span>
+          </Field>
+        </div>
+      ) : null}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {showPartner ? (
           <Field label="유입 파트너">
@@ -82,7 +120,7 @@ export function ConversionInflowDetails({
             {embed ? (
               <span className="inline-flex px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-700 text-[10px] font-bold">외부위젯</span>
             ) : null}
-            {data.source === 'call' ? (
+            {isCall ? (
               <span className="inline-flex px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 text-[10px] font-bold">콜디비</span>
             ) : null}
           </span>

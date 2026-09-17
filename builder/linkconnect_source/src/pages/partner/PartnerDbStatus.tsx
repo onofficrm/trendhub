@@ -1,4 +1,4 @@
-import { Search, Filter, Download, CheckCircle2, Clock, XCircle, MessageSquare, Info, Target, DollarSign, ListOrdered } from 'lucide-react';
+import { Search, Filter, Download, CheckCircle2, Clock, XCircle, MessageSquare, Info, Target, DollarSign, ListOrdered, Phone } from 'lucide-react';
 import { SummaryCard, StatusBadge } from '../../components/partner/PartnerShared';
 import { PartnerLayout } from '../../layouts/PartnerLayout';
 import { useEffect, useState } from 'react';
@@ -8,6 +8,37 @@ import { EMBED_HELP } from '../../lib/embedHelpTips';
 import { ConversionInflowCell } from '../../components/ConversionInflowPath';
 
 type SourceFilter = '' | 'embed' | 'call' | 'form';
+
+function formatCallDuration(seconds?: number | null) {
+  if (typeof seconds !== 'number' || seconds < 0) return '';
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}분 ${s}초`;
+}
+
+function isCallDb(db: PartnerConversion) {
+  return db.source === 'call' || !!db.isCallLogOnly || typeof db.callDuration === 'number';
+}
+
+function CallInfoCell({ db }: { db: PartnerConversion }) {
+  if (!isCallDb(db)) {
+    return <span className="text-slate-300">-</span>;
+  }
+  const duration = formatCallDuration(db.callDuration);
+  const result = db.callResultLabel || db.callResult || '';
+  return (
+    <div className="min-w-[120px]">
+      <div className="flex items-center gap-1.5 text-violet-700 font-semibold whitespace-nowrap">
+        <Phone size={13} className="shrink-0" />
+        <span>{duration || '콜디비'}</span>
+      </div>
+      {result ? <div className="text-[11px] text-violet-600/80 mt-0.5">{result}</div> : null}
+      {db.virtualNumber ? (
+        <div className="text-[10px] text-slate-400 font-mono mt-0.5">가상 {db.virtualNumber}</div>
+      ) : null}
+    </div>
+  );
+}
 
 export function PartnerDbStatus() {
   const [items, setItems] = useState<PartnerConversion[]>([]);
@@ -44,10 +75,10 @@ export function PartnerDbStatus() {
       <div className="flex flex-col mb-8 -mt-2">
         <p className="text-slate-500">
           CPA와 콜디비 접수 상태, 수익 반영 여부를 한 화면에서 확인할 수 있습니다.
+          콜디비는 통화시간·통화결과·가상번호를 함께 표시하며, 연락처는 마스킹됩니다.
         </p>
       </div>
 
-      {/* Overview Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4 mb-8">
         <SummaryCard title="전체 접수 DB" value={String(summary.total)} suffix="건" icon={<ListOrdered className="text-slate-500" />} />
         <SummaryCard title="승인대기" value={String(summary.pending)} suffix="건" icon={<Clock className="text-blue-500" />} />
@@ -58,7 +89,6 @@ export function PartnerDbStatus() {
         <SummaryCard title="확정수익" value={summary.confRevenue.toLocaleString()} suffix="원" highlight icon={<Target className="text-emerald-600" />} />
       </div>
 
-      {/* Filter Bar */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-wrap gap-4 items-center mb-6 shadow-sm">
         <div className="flex items-center gap-2">
           <input type="date" className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:border-emerald-500" defaultValue="2026-10-01" />
@@ -67,17 +97,9 @@ export function PartnerDbStatus() {
         </div>
         <select className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:border-emerald-500 min-w-[140px] flex-1 md:flex-none">
           <option>전체 캠페인</option>
-          <option>개인회생 상담 DB</option>
-          <option>어린이 영어캠프</option>
         </select>
         <select className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:border-emerald-500 min-w-[120px] flex-1 md:flex-none">
           <option>상태 전체</option>
-          <option>접수완료</option>
-          <option>검수중</option>
-          <option>승인완료</option>
-          <option>취소/무효</option>
-          <option>확정완료</option>
-          <option>정산완료</option>
         </select>
         <div className="flex items-center gap-1.5">
           <select
@@ -94,9 +116,9 @@ export function PartnerDbStatus() {
         </div>
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input 
-            type="text" 
-            placeholder="고객명, 연락처 검색" 
+          <input
+            type="text"
+            placeholder="고객명, 연락처 검색"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
@@ -111,7 +133,6 @@ export function PartnerDbStatus() {
         </button>
       </div>
 
-      {/* DB List */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col mb-8">
         <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
           <div className="text-sm text-slate-600 font-medium">총 <span className="text-emerald-600 font-bold">{items.length}</span>건의 디비가 조회되었습니다.</div>
@@ -124,7 +145,7 @@ export function PartnerDbStatus() {
             <Download size={14} /> {downloading ? '다운로드 중...' : 'CSV 다운로드'}
           </button>
         </div>
-        
+
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200">
@@ -133,6 +154,7 @@ export function PartnerDbStatus() {
                 <th className="px-4 py-4 font-medium whitespace-nowrap">광고상품</th>
                 <th className="px-4 py-4 font-medium whitespace-nowrap">고객명</th>
                 <th className="px-4 py-4 font-medium whitespace-nowrap">연락처</th>
+                <th className="px-4 py-4 font-medium whitespace-nowrap">콜정보</th>
                 <th className="px-4 py-4 font-medium whitespace-nowrap">유입경로</th>
                 <th className="px-4 py-4 font-medium text-center whitespace-nowrap">상태</th>
                 <th className="px-4 py-4 font-medium text-right whitespace-nowrap">단가</th>
@@ -143,7 +165,7 @@ export function PartnerDbStatus() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
-                <tr><td colSpan={10} className="px-4 py-12 text-center text-slate-500">불러오는 중...</td></tr>
+                <tr><td colSpan={11} className="px-4 py-12 text-center text-slate-500">불러오는 중...</td></tr>
               ) : items.length > 0 ? items.map((db) => (
                 <tr key={db.id} className={`transition-colors ${db.status === '취소/무효' ? 'bg-red-50/30 hover:bg-red-50/50' : 'hover:bg-slate-50'}`}>
                   <td className="px-4 py-4 text-slate-500 whitespace-nowrap">{db.date}</td>
@@ -152,9 +174,14 @@ export function PartnerDbStatus() {
                     {db.name}
                     {db.isCallLogOnly ? (
                       <span className="ml-2 inline-flex px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 text-[10px] font-bold align-middle">통화로그</span>
+                    ) : db.source === 'call' ? (
+                      <span className="ml-2 inline-flex px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 text-[10px] font-bold align-middle">콜디비</span>
                     ) : null}
                   </td>
                   <td className="px-4 py-4 font-mono text-slate-600 whitespace-nowrap">{db.phone}</td>
+                  <td className="px-4 py-4">
+                    <CallInfoCell db={db} />
+                  </td>
                   <td className="px-4 py-4 text-slate-600">
                     <ConversionInflowCell data={db} />
                   </td>
@@ -184,25 +211,20 @@ export function PartnerDbStatus() {
                   </td>
                 </tr>
               )) : (
-                <tr><td colSpan={10} className="px-4 py-12 text-center text-slate-500">접수된 디비가 없습니다.</td></tr>
+                <tr><td colSpan={11} className="px-4 py-12 text-center text-slate-500">접수된 디비가 없습니다.</td></tr>
               )}
             </tbody>
           </table>
         </div>
-        
-        {/* Pagination */}
+
         <div className="p-4 border-t border-slate-100 flex items-center justify-center gap-1">
           <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50" disabled>&lt;</button>
           <button className="w-8 h-8 flex items-center justify-center rounded-lg bg-emerald-500 text-white font-bold shadow-sm">1</button>
           <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 font-medium">2</button>
-          <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 font-medium">3</button>
-          <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm">...</button>
-          <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 font-medium">12</button>
           <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50">&gt;</button>
         </div>
       </div>
 
-      {/* Info Box */}
       <div className="bg-slate-900 rounded-2xl p-6 text-white shadow-lg">
         <div className="flex items-center gap-2 mb-4">
           <Info className="text-cyan-400" size={20} />
@@ -230,16 +252,11 @@ export function PartnerDbStatus() {
             <div><strong className="text-white">확정완료:</strong> 수익 정산이 확정된 상태입니다.</div>
           </div>
           <div className="flex items-start gap-2">
-            <span className="inline-block w-2 h-2 rounded-full bg-purple-400 mt-1.5 shrink-0"></span>
-            <div><strong className="text-white">정산완료:</strong> 파트너에게 수익 지급이 완료되었습니다.</div>
+            <span className="inline-block w-2 h-2 rounded-full bg-violet-400 mt-1.5 shrink-0"></span>
+            <div><strong className="text-white">콜디비:</strong> 통화시간·통화결과·가상번호를 확인할 수 있습니다. 연락처는 마스킹됩니다.</div>
           </div>
         </div>
       </div>
-
     </PartnerLayout>
   );
 }
-
-
-
-
