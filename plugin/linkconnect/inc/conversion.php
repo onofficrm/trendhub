@@ -400,7 +400,7 @@ if (!function_exists('lc_conversion_list_for_merchant')) {
         $click_meta = function_exists('lc_conversion_click_meta_select_sql')
             ? lc_conversion_click_meta_select_sql()
             : " '' AS cl_referer, '' AS cl_user_agent, '' AS cl_ip ";
-        $sql = " SELECT cv.*, c.cp_name, c.cp_landing_url, c.cp_tracking_base_url, p.pt_code, lk.lk_code,
+        $sql = " SELECT cv.*, c.cp_name, c.cp_landing_url, c.cp_tracking_base_url, p.pt_code, p.mb_id AS pt_mb_id, lk.lk_code,
             {$click_meta}
             FROM `{$cv_table}` cv
             INNER JOIN `{$cp_table}` c ON c.cp_id = cv.cp_id
@@ -429,10 +429,13 @@ if (!function_exists('lc_conversion_to_api_merchant')) {
         $raw_phone = (string) ($row['cv_phone'] ?? '');
         $phone = $mask_phone ? lc_conversion_mask_phone($raw_phone) : lc_conversion_format_phone($raw_phone);
         $pt_code = trim((string) ($row['pt_code'] ?? ''));
+        $pt_member_id = trim((string) ($row['pt_mb_id'] ?? ''));
         $channel = trim((string) ($row['cv_channel'] ?? ''));
         if ($pt_code === '' && strtoupper($channel) === 'SEO') {
             $pt_code = 'SEO';
         }
+        // 광고주센터: 파트너 로그인 아이디만 표시 (이름/코드 비공개)
+        $partner_display = $pt_member_id !== '' ? $pt_member_id : ($pt_code !== '' ? $pt_code : '-');
         $page_url = lc_conversion_page_url($row);
         $inflow = function_exists('lc_conversion_resolve_inflow_meta')
             ? lc_conversion_resolve_inflow_meta($row, 'mask')
@@ -460,7 +463,9 @@ if (!function_exists('lc_conversion_to_api_merchant')) {
             'email'       => (string) ($row['cv_email'] ?? ''),
             'region'      => (string) ($row['cv_region'] ?? ''),
             'inquiry'     => (string) ($row['cv_inquiry'] ?? ''),
-            'partner'     => $pt_code !== '' ? $pt_code : '-',
+            'partner'     => $partner_display,
+            'partnerMemberId' => $pt_member_id !== '' ? $pt_member_id : '',
+            'partnerCode' => $pt_code !== '' ? $pt_code : '',
             'status'      => lc_conversion_status_label($status),
             'statusCode'  => $status,
             'price'       => (int) $row['cv_price'],
@@ -641,7 +646,7 @@ if (!function_exists('lc_conversion_call_log_only_rows')) {
 
         $limit = max(1, min(5000, (int) $limit));
         $rows = array();
-        $sql = " SELECT l.*, c.cp_name, p.pt_code
+        $sql = " SELECT l.*, c.cp_name, p.pt_code, p.mb_id AS pt_mb_id
             FROM `{$clog}` l
             LEFT JOIN `{$cp_table}` c ON c.cp_id = l.cp_id
             LEFT JOIN `{$pt_table}` p ON p.pt_id = l.pt_id
@@ -672,6 +677,10 @@ if (!function_exists('lc_conversion_call_log_only_to_api')) {
         $virtual = function_exists('lc_call_number_format')
             ? lc_call_number_format((string) ($row['clog_virtual_number'] ?? ''))
             : (string) ($row['clog_virtual_number'] ?? '');
+        $pt_code = trim((string) ($row['pt_code'] ?? ''));
+        $pt_member_id = trim((string) ($row['pt_mb_id'] ?? ''));
+        // 광고주: 아이디만 / 파트너 API(mask)도 동일 필드 구조 유지
+        $partner_display = $pt_member_id !== '' ? $pt_member_id : ($pt_code !== '' ? $pt_code : '-');
 
         return array(
             'id'            => 'CALL-' . (int) ($row['clog_id'] ?? 0),
@@ -686,7 +695,9 @@ if (!function_exists('lc_conversion_call_log_only_to_api')) {
             'email'         => '',
             'region'        => '',
             'inquiry'       => '콜디비 통화 ' . floor($duration / 60) . '분 ' . ($duration % 60) . '초 (' . $result_label . ')',
-            'partner'       => (string) ($row['pt_code'] ?? '-'),
+            'partner'       => $partner_display,
+            'partnerMemberId' => $pt_member_id !== '' ? $pt_member_id : '',
+            'partnerCode'   => $pt_code !== '' ? $pt_code : '',
             'status'        => $mask_phone ? '검수중' : '신규접수',
             'statusCode'    => defined('LC_STATUS_PENDING') ? LC_STATUS_PENDING : 'pending',
             'price'         => $price,
