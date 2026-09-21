@@ -533,7 +533,22 @@ if (!function_exists('lc_admin_list_call_log_only_conversions')) {
         $rows = array();
         $result = lc_sql_query($sql, false);
         if ($result) {
+            $seen = array();
             while ($row = sql_fetch_array($result)) {
+                // 정규화 번호 기준 목록 중복 숨김 (DB 정리 전 안전망)
+                $vn = function_exists('lc_call_number_normalize')
+                    ? lc_call_number_normalize((string) ($row['clog_virtual_number'] ?? ''))
+                    : preg_replace('/[^0-9]/', '', (string) ($row['clog_virtual_number'] ?? ''));
+                $caller = function_exists('lc_call_number_normalize')
+                    ? lc_call_number_normalize((string) ($row['clog_caller'] ?? ''))
+                    : preg_replace('/[^0-9]/', '', (string) ($row['clog_caller'] ?? ''));
+                $sig = $vn . '|' . $caller . '|' . (string) ($row['clog_started_at'] ?? '') . '|' . (int) ($row['clog_duration'] ?? 0);
+                if ($caller !== '' && isset($seen[$sig])) {
+                    continue;
+                }
+                if ($caller !== '') {
+                    $seen[$sig] = true;
+                }
                 $rows[] = $row;
             }
         }

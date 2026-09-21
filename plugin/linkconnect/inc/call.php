@@ -149,6 +149,69 @@ if (!function_exists('lc_call_number_dedupe_variants')) {
     }
 }
 
+if (!function_exists('lc_call_log_build_dedupe_key')) {
+    /**
+     * 정규화된 통화 내용 지문. providerCallId 와 무관하게 동일 통화 식별.
+     */
+    function lc_call_log_build_dedupe_key($virtual_number, $caller, $started_at, $duration, $result = '')
+    {
+        $vn = lc_call_number_normalize($virtual_number);
+        $caller_n = lc_call_number_normalize($caller);
+        $started = trim((string) $started_at);
+        $duration = (int) $duration;
+        $result = trim((string) $result);
+        if ($vn === '' || $caller_n === '' || $started === '') {
+            return '';
+        }
+
+        return substr(hash('sha256', $vn . '|' . $caller_n . '|' . $started . '|' . $duration . '|' . $result), 0, 40);
+    }
+}
+
+if (!function_exists('lc_call_logs_ensure_dedupe_schema')) {
+    /**
+     * call_logs.clog_dedupe_key UNIQUE 컬럼 보장.
+     *
+     * @return array{ok:bool,message:string}
+     */
+    function lc_call_logs_ensure_dedupe_schema()
+    {
+        static $done = false;
+        if ($done) {
+            return array('ok' => true, 'message' => 'ready');
+        }
+        if (!lc_db_installed() || !lc_db_table_exists(lc_table('call_logs'))) {
+            return array('ok' => false, 'message' => 'call_logs 없음');
+        }
+
+        $clog = lc_table('call_logs');
+        if (!lc_db_column_exists($clog, 'clog_dedupe_key')) {
+            $alter = lc_sql_query(
+                " ALTER TABLE `{$clog}`
+                  ADD COLUMN `clog_dedupe_key` varchar(40) DEFAULT NULL AFTER `clog_provider_call_id`,
+                  ADD UNIQUE KEY `uk_clog_dedupe_key` (`clog_dedupe_key`) ",
+                false
+            );
+            if ($alter === false) {
+                // 컬럼만 있고 인덱스 없는 경우 등 부분 적용 재시도
+                if (!lc_db_column_exists($clog, 'clog_dedupe_key')) {
+                    lc_sql_query(
+                        " ALTER TABLE `{$clog}`
+                          ADD COLUMN `clog_dedupe_key` varchar(40) DEFAULT NULL AFTER `clog_provider_call_id` ",
+                        false
+                    );
+                }
+                // UNIQUE 인덱스 별도 추가 (이미 있으면 무시)
+                lc_sql_query(" ALTER TABLE `{$clog}` ADD UNIQUE KEY `uk_clog_dedupe_key` (`clog_dedupe_key`) ", false);
+            }
+        }
+
+        $done = true;
+
+        return array('ok' => true, 'message' => 'clog_dedupe_key ready');
+    }
+}
+
 if (!function_exists('lc_call_number_format')) {
     /**
      * 표시용 하이픈 포맷. 예: 050369821000 → 0503-6982-1000
@@ -232,10 +295,14 @@ if (!function_exists('lc_call_logs_repair_caller_duplicates')) {
             return array('ok' => false, 'message' => 'call_logs 없음', 'normalized' => 0, 'removed' => 0);
         }
 
+        lc_call_logs_ensure_dedupe_schema();
+
         $clog = lc_table('call_logs');
         $limit = max(1, (int) $limit);
         $normalized = 0;
         $removed = 0;
+        $keyed = 0;
+        $has_dedupe = lc_db_column_exists($clog, 'clog_dedupe_key');
 
         // 1) 발신번호 선행 0 복구
         $result = lc_sql_query(
@@ -263,7 +330,74 @@ if (!function_exists('lc_call_logs_repair_caller_duplicates')) {
             }
         }
 
-        // 2) 동일 내용 중복 제거 (미전환 로그만)
+        // 2) dedupe_key 백필
+        if ($has_dedupe) {
+            $key_result = lc_sql_query(
+                " SELECT clog_id, clog_virtual_number, clog_caller, clog_started_at, clog_duration, clog_result, clog_dedupe_key
+                  FROM `{$clog}`
+                  WHERE clog_caller <> ''
+                  ORDER BY clog_id ASC
+                  LIMIT {$limit} ",
+                false
+            );
+            if ($key_result) {
+                while ($row = sql_fetch_array($key_result)) {
+                    $clog_id = (int) ($row['clog_id'] ?? 0);
+                    $key = lc_call_log_build_dedupe_key(
+                        (string) ($row['clog_virtual_number'] ?? ''),
+                        (string) ($row['clog_caller'] ?? ''),
+                        (string) ($row['clog_started_at'] ?? ''),
+                        (int) ($row['clog_duration'] ?? 0),
+                        (string) ($row['clog_result'] ?? '')
+                    );
+                    if ($clog_id <= 0 || $key === '') {
+                        continue;
+                    }
+                    $prev = (string) ($row['clog_dedupe_key'] ?? '');
+                    if ($prev === $key) {
+                        continue;
+                    }
+                    // 이미 같은 키가 있으면(중복) 미전환 로그만 삭제
+                    $conflict = lc_sql_fetch(
+                        " SELECT clog_id, cv_id FROM `{$clog}`
+                          WHERE clog_dedupe_key = '" . lc_sql_escape($key) . "'
+                            AND clog_id <> '{$clog_id}'
+                          LIMIT 1 "
+                    );
+                    if ($conflict) {
+                        $keep_id = (int) ($conflict['clog_id'] ?? 0);
+                        $drop_id = $clog_id;
+                        // 더 작은 id 유지
+                        if ($keep_id > $drop_id) {
+                            $tmp = $keep_id;
+                            $keep_id = $drop_id;
+                            $drop_id = $tmp;
+                        }
+                        $drop = lc_sql_fetch(" SELECT clog_id, cv_id FROM `{$clog}` WHERE clog_id = '{$drop_id}' LIMIT 1 ");
+                        if ($drop && (int) ($drop['cv_id'] ?? 0) === 0) {
+                            lc_sql_query(" DELETE FROM `{$clog}` WHERE clog_id = '{$drop_id}' AND cv_id = '0' LIMIT 1 ", false);
+                            $removed++;
+                        }
+                        // keep 쪽에 키 보장
+                        lc_sql_query(
+                            " UPDATE `{$clog}` SET clog_dedupe_key = '" . lc_sql_escape($key) . "'
+                              WHERE clog_id = '{$keep_id}' ",
+                            false
+                        );
+                        continue;
+                    }
+
+                    lc_sql_query(
+                        " UPDATE `{$clog}` SET clog_dedupe_key = '" . lc_sql_escape($key) . "'
+                          WHERE clog_id = '{$clog_id}' ",
+                        false
+                    );
+                    $keyed++;
+                }
+            }
+        }
+
+        // 3) 동일 내용 중복 제거 (미전환 로그만) — 키 없어도 동작
         $dup_sql = " SELECT a.clog_id AS keep_id, b.clog_id AS drop_id
             FROM `{$clog}` a
             INNER JOIN `{$clog}` b
@@ -289,8 +423,9 @@ if (!function_exists('lc_call_logs_repair_caller_duplicates')) {
 
         return array(
             'ok'          => true,
-            'message'     => "발신번호 정규화 {$normalized}건, 중복 제거 {$removed}건",
+            'message'     => "발신번호 정규화 {$normalized}건, 키 백필 {$keyed}건, 중복 제거 {$removed}건",
             'normalized'  => $normalized,
+            'keyed'       => $keyed,
             'removed'     => $removed,
         );
     }
@@ -1881,6 +2016,9 @@ if (!function_exists('lc_call_ingest_log')) {
         }
 
         $clog_table = lc_table('call_logs');
+        lc_call_logs_ensure_dedupe_schema();
+        $has_dedupe = lc_db_column_exists($clog_table, 'clog_dedupe_key');
+        $dedupe_key = lc_call_log_build_dedupe_key($virtual_number, $caller, $started_at, $duration, $result);
 
         // 중복 통화 방지 (provider call id)
         if ($provider_call_id !== '') {
@@ -1893,7 +2031,28 @@ if (!function_exists('lc_call_ingest_log')) {
             $provider_call_id = 'auto-' . date('YmdHis') . '-' . substr(md5(uniqid('', true) . $virtual_number . $caller . $started_at), 0, 12);
         }
 
-        // 번호 표기만 다른 동일 통화 중복 방지 (선행 0 누락 등)
+        // 내용 지문(정규화 번호 기준) — DB UNIQUE 로 재발 방지
+        if ($has_dedupe && $dedupe_key !== '') {
+            $by_key = lc_sql_fetch(
+                " SELECT clog_id, clog_caller FROM `{$clog_table}`
+                  WHERE clog_dedupe_key = '" . lc_sql_escape($dedupe_key) . "'
+                  LIMIT 1 "
+            );
+            if ($by_key) {
+                $dup_id = (int) ($by_key['clog_id'] ?? 0);
+                if ($dup_id > 0 && $caller !== '' && (string) ($by_key['clog_caller'] ?? '') !== $caller) {
+                    lc_sql_query(
+                        " UPDATE `{$clog_table}` SET clog_caller = '" . lc_sql_escape($caller) . "'
+                          WHERE clog_id = '{$dup_id}' ",
+                        false
+                    );
+                }
+
+                return array('ok' => true, 'message' => '이미 수신된 통화입니다.', 'clogId' => $dup_id, 'duplicate' => true);
+            }
+        }
+
+        // 번호 표기만 다른 동일 통화 중복 방지 (선행 0 누락 등 · 구 데이터)
         if ($caller !== '') {
             $caller_variants = lc_call_number_dedupe_variants($caller);
             $caller_in = array();
@@ -1914,10 +2073,12 @@ if (!function_exists('lc_call_ingest_log')) {
                     $dup_id = (int) ($content_dup['clog_id'] ?? 0);
                     $stored_caller = (string) ($content_dup['clog_caller'] ?? '');
                     if ($dup_id > 0 && $caller !== '' && $stored_caller !== $caller) {
+                        $sets = "clog_caller = '" . lc_sql_escape($caller) . "'";
+                        if ($has_dedupe && $dedupe_key !== '') {
+                            $sets .= ", clog_dedupe_key = '" . lc_sql_escape($dedupe_key) . "'";
+                        }
                         lc_sql_query(
-                            " UPDATE `{$clog_table}`
-                              SET clog_caller = '" . lc_sql_escape($caller) . "'
-                              WHERE clog_id = '{$dup_id}' ",
+                            " UPDATE `{$clog_table}` SET {$sets} WHERE clog_id = '{$dup_id}' ",
                             false
                         );
                     }
@@ -1939,8 +2100,15 @@ if (!function_exists('lc_call_ingest_log')) {
         $cn_id = $assignment ? (int) $assignment['cn_id'] : 0;
         $car_id = $assignment ? (int) $assignment['car_id'] : 0;
 
+        $dedupe_sql = '';
+        if ($has_dedupe) {
+            $dedupe_sql = $dedupe_key !== ''
+                ? ", clog_dedupe_key = '" . lc_sql_escape($dedupe_key) . "'"
+                : ', clog_dedupe_key = NULL';
+        }
+
         lc_sql_query(" INSERT INTO `{$clog_table}` SET
-            clog_provider_call_id = '" . lc_sql_escape($provider_call_id) . "',
+            clog_provider_call_id = '" . lc_sql_escape($provider_call_id) . "'{$dedupe_sql},
             cn_id = '{$cn_id}',
             car_id = '{$car_id}',
             pt_id = '{$pt_id}',
@@ -1964,6 +2132,15 @@ if (!function_exists('lc_call_ingest_log')) {
             $again = lc_sql_fetch(" SELECT clog_id FROM `{$clog_table}` WHERE clog_provider_call_id = '" . lc_sql_escape($provider_call_id) . "' LIMIT 1 ");
             if ($again) {
                 return array('ok' => true, 'message' => '이미 수신된 통화입니다.', 'clogId' => (int) $again['clog_id'], 'duplicate' => true);
+            }
+            if ($has_dedupe && $dedupe_key !== '') {
+                $again2 = lc_sql_fetch(
+                    " SELECT clog_id FROM `{$clog_table}`
+                      WHERE clog_dedupe_key = '" . lc_sql_escape($dedupe_key) . "' LIMIT 1 "
+                );
+                if ($again2) {
+                    return array('ok' => true, 'message' => '이미 수신된 통화입니다.', 'clogId' => (int) $again2['clog_id'], 'duplicate' => true);
+                }
             }
 
             return array('ok' => false, 'message' => '통화 기록 저장에 실패했습니다.');

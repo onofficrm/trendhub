@@ -1014,6 +1014,7 @@ if (!function_exists('lc_db_run_migrations')) {
             $create = lc_sql_query("CREATE TABLE IF NOT EXISTS `{$call_logs}` (
                 `clog_id` bigint unsigned NOT NULL AUTO_INCREMENT,
                 `clog_provider_call_id` varchar(100) NOT NULL DEFAULT '',
+                `clog_dedupe_key` varchar(40) DEFAULT NULL,
                 `cn_id` int unsigned NOT NULL DEFAULT 0,
                 `car_id` int unsigned NOT NULL DEFAULT 0,
                 `pt_id` int unsigned NOT NULL DEFAULT 0,
@@ -1031,6 +1032,7 @@ if (!function_exists('lc_db_run_migrations')) {
                 `clog_created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (`clog_id`),
                 UNIQUE KEY `uk_clog_provider_call_id` (`clog_provider_call_id`),
+                UNIQUE KEY `uk_clog_dedupe_key` (`clog_dedupe_key`),
                 KEY `idx_clog_number` (`clog_virtual_number`),
                 KEY `idx_clog_pt_id` (`pt_id`),
                 KEY `idx_clog_cp_id` (`cp_id`),
@@ -1040,6 +1042,8 @@ if (!function_exists('lc_db_run_migrations')) {
             if ($create === false) {
                 return array('ok' => false, 'message' => 'call_logs 테이블 생성 실패: ' . lc_sql_error());
             }
+        } elseif (function_exists('lc_call_logs_ensure_dedupe_schema')) {
+            lc_call_logs_ensure_dedupe_schema();
         }
 
         $call_recording_requests = lc_table('call_recording_requests');
