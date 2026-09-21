@@ -143,9 +143,14 @@ $register_action_url = G5_HTTPS_BBS_URL.'/register_form_update.php';
 $req_nick = !isset($member['mb_nick_date']) || (isset($member['mb_nick_date']) && $member['mb_nick_date'] <= date("Y-m-d", G5_SERVER_TIME - ($config['cf_nick_modify'] * 86400)));
 $required = ($w=='') ? 'required' : '';
 $readonly = ($w=='u') ? 'readonly' : '';
-$name_readonly = ($w=='u' || ($config['cf_cert_use'] && $config['cf_cert_req']))? 'readonly' : '';
+// 정보수정에서도 이름 변경 가능. 본인인증 완료 회원만 이름 잠금.
+$name_readonly = ($config['cf_cert_use'] && !empty($member['mb_certify'])) ? 'readonly' : '';
 $hp_required = ($config['cf_req_hp'] || (($config['cf_cert_use'] && $config['cf_cert_req']) && ($config['cf_cert_hp'] || $config['cf_cert_simple']) && $member['mb_certify'] != "ipin")) ? 'required':'';
 $hp_readonly = (($config['cf_cert_use'] && $config['cf_cert_req']) && ($config['cf_cert_hp'] || $config['cf_cert_simple']) && $member['mb_certify'] != "ipin") ? 'readonly':'';
+// 본인인증 미완료면 휴대폰도 수정 가능
+if (empty($member['mb_certify'])) {
+    $hp_readonly = '';
+}
 
 $agree  = isset($_REQUEST['agree']) ? preg_replace('#[^0-9]#', '', $_REQUEST['agree']) : '';
 $agree2 = isset($_REQUEST['agree2']) ? preg_replace('#[^0-9]#', '', $_REQUEST['agree2']) : '';

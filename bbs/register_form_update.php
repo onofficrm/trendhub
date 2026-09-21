@@ -169,6 +169,14 @@ if ($w == '' || $w == 'u') {
             $mb_nick = $member['mb_nick'];
         // 회원정보의 메일을 이전 메일로 옮기고 아래에서 비교함
         $old_email = $member['mb_email'];
+
+        // 본인인증 완료 회원은 이름(및 휴대폰) 변조 방지
+        if (!empty($member['mb_certify'])) {
+            $mb_name = addslashes(clean_xss_tags($member['mb_name'], 1, 1));
+            if ($member['mb_certify'] != 'ipin') {
+                $mb_hp = hyphen_hp_number($member['mb_hp']);
+            }
+        }
     }
 
     run_event('register_form_update_valid', $w, $mb_id, $mb_nick, $mb_email);
@@ -435,12 +443,14 @@ if ($w == '') {
 
     $sql = " update {$g5['member_table']}
                 set mb_nick = '{$mb_nick}',
+                    mb_name = '{$mb_name}',
                     mb_mailling = '{$mb_mailling}',
                     mb_sms = '{$mb_sms}',
                     mb_open = '{$mb_open}',
                     mb_email = '{$mb_email}',
                     mb_homepage = '{$mb_homepage}',
                     mb_tel = '{$mb_tel}',
+                    mb_hp = '{$mb_hp}',
                     mb_zip1 = '{$mb_zip1}',
                     mb_zip2 = '{$mb_zip2}',
                     mb_addr1 = '{$mb_addr1}',

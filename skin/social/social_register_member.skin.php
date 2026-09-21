@@ -139,7 +139,7 @@ $email_msg = $is_exists_email ? '등록할 이메일이 중복되었습니다.�
                             <?php }  ?>
                         </label>
                         <input type="hidden" name="old_email" value="<?php echo $member['mb_email'] ?>">
-                        <input type="text" name="mb_email" value="<?php echo isset($user_email) ? $user_email : ''; ?>" id="reg_mb_email" required <?php echo (isset($user_email) && $user_email != '' && !$is_exists_email)? "readonly":''; ?> class="frm_input email full_input required" size="70" maxlength="100" placeholder="E-mail">
+                        <input type="text" name="mb_email" value="<?php echo isset($user_email) ? $user_email : ''; ?>" id="reg_mb_email" required class="frm_input email full_input required" size="70" maxlength="100" placeholder="E-mail">
                         <div class="check"><?php echo $email_msg; ?></div>
                     </li>
                 </ul>
