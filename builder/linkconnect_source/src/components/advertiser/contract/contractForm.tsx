@@ -195,7 +195,7 @@ export function validateStep4(form: ContractFormState, hasSignature: boolean) {
     errors.signerEmail = '이메일 형식이 올바르지 않습니다.';
   }
   if (!hasSignature) {
-    errors.signature = '서명을 입력해 주세요.';
+    errors.signature = '서명을 입력하거나 인감·사인 이미지를 첨부해 주세요.';
   }
   return errors;
 }

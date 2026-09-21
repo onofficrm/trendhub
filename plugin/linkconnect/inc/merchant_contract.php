@@ -621,7 +621,7 @@ if (!function_exists('lc_merchant_contract_validate_signer_form')) {
         }
 
         if ($require_signature && empty($form['hasSignature'])) {
-            $errors['signature'] = '서명을 입력해 주세요.';
+            $errors['signature'] = '서명을 입력하거나 인감·사인 이미지를 첨부해 주세요.';
         }
 
         return array('ok' => count($errors) === 0, 'errors' => $errors);
@@ -1078,7 +1078,7 @@ if (!function_exists('lc_merchant_contract_validate_submit')) {
 
         $contract = lc_merchant_contract_get($mt_id, lc_merchant_contract_current_version());
         if (!is_array($contract) || (string) ($contract['mc_signature_file_path'] ?? '') === '') {
-            return array('ok' => false, 'message' => '서명을 저장한 후 다시 시도해 주세요.', 'errors' => array('signature' => '서명을 입력해 주세요.'));
+            return array('ok' => false, 'message' => '서명을 저장한 후 다시 시도해 주세요.', 'errors' => array('signature' => '서명을 입력하거나 인감·사인 이미지를 첨부해 주세요.'));
         }
 
         return array('ok' => true, 'message' => '입력 내용이 확인되었습니다. (최종 체결은 다음 단계에서 처리됩니다.)');

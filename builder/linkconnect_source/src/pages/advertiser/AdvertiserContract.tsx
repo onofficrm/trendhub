@@ -316,7 +316,7 @@ export function AdvertiserContract() {
   };
 
   useEffect(() => {
-    if (!signatureDataUrl || !state?.csrfToken || step !== 3) return;
+    if (!signatureDataUrl || !state?.csrfToken || step !== 4) return;
     const timer = window.setTimeout(() => {
       void uploadMerchantContractSignature({
         csrfToken: state.csrfToken,
@@ -607,7 +607,7 @@ export function AdvertiserContract() {
         <section className="bg-white border border-slate-200 rounded-2xl p-5 md:p-8 shadow-sm space-y-6">
           <div>
             <h2 className="text-lg font-bold text-slate-900 mb-1">4단계: 계약 담당자 입력 및 서명</h2>
-            <p className="text-sm text-slate-500">계약 체결 권한을 가진 담당자 정보와 서명을 입력해 주세요.</p>
+            <p className="text-sm text-slate-500">계약 체결 권한을 가진 담당자 정보를 입력하고, 직접 서명하거나 인감·사인 이미지를 첨부해 주세요.</p>
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
