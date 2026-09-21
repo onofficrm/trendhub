@@ -176,6 +176,12 @@ if (!function_exists('lc_conversion_format_phone')) {
     function lc_conversion_format_phone($phone)
     {
         $digits = preg_replace('/[^0-9]/', '', (string) $phone);
+        // 콜디비와 동일하게 선행 0 누락 휴대폰 복구
+        if (function_exists('lc_call_number_normalize')) {
+            $digits = lc_call_number_normalize($digits);
+        } elseif (preg_match('/^1[0-9]\d{8}$/', $digits)) {
+            $digits = '0' . $digits;
+        }
         if (strlen($digits) === 11) {
             return substr($digits, 0, 3) . '-' . substr($digits, 3, 4) . '-' . substr($digits, 7);
         }

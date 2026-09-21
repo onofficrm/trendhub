@@ -37,6 +37,11 @@ if ($method === 'GET') {
     );
 
     if (lc_db_installed()) {
+        // 콜디비 선행0 누락 중복 정리 (목록 조회 시 소량)
+        if (function_exists('lc_call_logs_repair_caller_duplicates')) {
+            lc_call_logs_repair_caller_duplicates(500);
+        }
+
         $conversion_items = array_map('lc_admin_conversion_to_api', lc_admin_list_conversions($filters, 100));
         $call_log_items = function_exists('lc_admin_list_call_log_only_conversions') && function_exists('lc_admin_call_log_only_conversion_to_api')
             ? array_map('lc_admin_call_log_only_conversion_to_api', lc_admin_list_call_log_only_conversions($filters, 100))

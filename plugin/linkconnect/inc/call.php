@@ -91,8 +91,9 @@ if (!function_exists('lc_campaign_call_enabled')) {
 
 if (!function_exists('lc_call_number_normalize')) {
     /**
-     * 숫자만 남기고, 엑셀 등에서 앞자리 0이 빠진 050 가상번호를 복구.
+     * 숫자만 남기고, 엑셀 등에서 앞자리 0이 빠진 번호를 복구.
      * 예: 50369821193 → 050369821193
+     * 예: 1082776914 → 01082776914
      */
     function lc_call_number_normalize($number)
     {
@@ -101,12 +102,50 @@ if (!function_exists('lc_call_number_normalize')) {
             return '';
         }
 
+        // +82 / 82 국가번호 → 국내 0 번호
+        if (preg_match('/^82(1[0-9]\d{8})$/', $digits, $m)) {
+            $digits = '0' . $m[1];
+        } elseif (preg_match('/^82(50[0-9]\d{8})$/', $digits, $m)) {
+            $digits = '0' . $m[1];
+        }
+
         // 050x 가상번호(12자리)에서 선행 0이 빠진 11자리 복구
         if (preg_match('/^50[0-9]\d{8}$/', $digits)) {
             $digits = '0' . $digits;
         }
 
+        // 010~019 휴대폰: 선행 0이 빠진 10자리 복구 (1082776914 → 01082776914)
+        if (preg_match('/^1[0-9]\d{8}$/', $digits)) {
+            $digits = '0' . $digits;
+        }
+
         return $digits;
+    }
+}
+
+if (!function_exists('lc_call_number_dedupe_variants')) {
+    /**
+     * 중복 판정용 번호 변형(정규화본 + 선행 0 누락본).
+     *
+     * @return list<string>
+     */
+    function lc_call_number_dedupe_variants($number)
+    {
+        $normalized = lc_call_number_normalize($number);
+        if ($normalized === '') {
+            return array();
+        }
+
+        $variants = array($normalized);
+        // 이미 DB에 0 없이 저장된 구 데이터와 매칭
+        if (preg_match('/^0(1[0-9]\d{8})$/', $normalized, $m)) {
+            $variants[] = $m[1];
+        }
+        if (preg_match('/^0(50[0-9]\d{8})$/', $normalized, $m)) {
+            $variants[] = $m[1];
+        }
+
+        return array_values(array_unique($variants));
     }
 }
 
@@ -175,6 +214,85 @@ if (!function_exists('lc_call_number_repair_stored')) {
         }
 
         return $fixed;
+    }
+}
+
+if (!function_exists('lc_call_logs_repair_caller_duplicates')) {
+    /**
+     * 선행 0 누락으로 생긴 콜로그 중복을 정규화·병합.
+     * - clog_caller 10자리 휴대폰 → 0 복구
+     * - 동일(가상번호·시작시각·통화시간·정규화 발신번호) 중복은 작은 clog_id 유지, 나머지 삭제
+     *   (둘 다 cv_id=0 인 CALL-* 미전환 로그만 삭제; 전환이 있으면 로그만 남겨둠)
+     *
+     * @return array{ok:bool,message:string,normalized:int,removed:int}
+     */
+    function lc_call_logs_repair_caller_duplicates($limit = 5000)
+    {
+        if (!lc_db_installed() || !lc_db_table_exists(lc_table('call_logs'))) {
+            return array('ok' => false, 'message' => 'call_logs 없음', 'normalized' => 0, 'removed' => 0);
+        }
+
+        $clog = lc_table('call_logs');
+        $limit = max(1, (int) $limit);
+        $normalized = 0;
+        $removed = 0;
+
+        // 1) 발신번호 선행 0 복구
+        $result = lc_sql_query(
+            " SELECT clog_id, clog_caller FROM `{$clog}`
+              WHERE clog_caller REGEXP '^[1-9][0-9]{9}$'
+                 OR clog_caller REGEXP '^1[0-9]{9}$'
+              ORDER BY clog_id ASC
+              LIMIT {$limit} ",
+            false
+        );
+        if ($result) {
+            while ($row = sql_fetch_array($result)) {
+                $clog_id = (int) ($row['clog_id'] ?? 0);
+                $raw = (string) ($row['clog_caller'] ?? '');
+                $fixed = lc_call_number_normalize($raw);
+                if ($clog_id <= 0 || $fixed === '' || $fixed === $raw) {
+                    continue;
+                }
+                lc_sql_query(
+                    " UPDATE `{$clog}` SET clog_caller = '" . lc_sql_escape($fixed) . "'
+                      WHERE clog_id = '{$clog_id}' ",
+                    false
+                );
+                $normalized++;
+            }
+        }
+
+        // 2) 동일 내용 중복 제거 (미전환 로그만)
+        $dup_sql = " SELECT a.clog_id AS keep_id, b.clog_id AS drop_id
+            FROM `{$clog}` a
+            INNER JOIN `{$clog}` b
+              ON a.clog_virtual_number = b.clog_virtual_number
+             AND a.clog_started_at = b.clog_started_at
+             AND a.clog_duration = b.clog_duration
+             AND a.clog_caller = b.clog_caller
+             AND a.clog_id < b.clog_id
+            WHERE b.cv_id = '0'
+            ORDER BY b.clog_id ASC
+            LIMIT {$limit} ";
+        $dup_result = lc_sql_query($dup_sql, false);
+        if ($dup_result) {
+            while ($row = sql_fetch_array($dup_result)) {
+                $drop_id = (int) ($row['drop_id'] ?? 0);
+                if ($drop_id <= 0) {
+                    continue;
+                }
+                lc_sql_query(" DELETE FROM `{$clog}` WHERE clog_id = '{$drop_id}' AND cv_id = '0' LIMIT 1 ", false);
+                $removed++;
+            }
+        }
+
+        return array(
+            'ok'          => true,
+            'message'     => "발신번호 정규화 {$normalized}건, 중복 제거 {$removed}건",
+            'normalized'  => $normalized,
+            'removed'     => $removed,
+        );
     }
 }
 
@@ -1406,6 +1524,10 @@ if (!function_exists('lc_call_logs_rematch_unmatched')) {
             'items' => array(),
         );
 
+        if (function_exists('lc_call_logs_repair_caller_duplicates')) {
+            $summary['callerRepair'] = lc_call_logs_repair_caller_duplicates($limit);
+        }
+
         $result = lc_sql_query(" SELECT clog_id, clog_virtual_number, clog_callee, pt_id, cp_id, mt_id, cn_id, car_id
             FROM `{$clog}`
             WHERE {$where}
@@ -1769,6 +1891,45 @@ if (!function_exists('lc_call_ingest_log')) {
         } else {
             // provider call id 미제공 시 UNIQUE 충돌 방지용 합성 키 생성
             $provider_call_id = 'auto-' . date('YmdHis') . '-' . substr(md5(uniqid('', true) . $virtual_number . $caller . $started_at), 0, 12);
+        }
+
+        // 번호 표기만 다른 동일 통화 중복 방지 (선행 0 누락 등)
+        if ($caller !== '') {
+            $caller_variants = lc_call_number_dedupe_variants($caller);
+            $caller_in = array();
+            foreach ($caller_variants as $variant) {
+                $caller_in[] = "'" . lc_sql_escape($variant) . "'";
+            }
+            if ($caller_in) {
+                $content_dup = lc_sql_fetch(
+                    " SELECT clog_id, clog_caller FROM `{$clog_table}`
+                      WHERE clog_virtual_number = '" . lc_sql_escape($virtual_number) . "'
+                        AND clog_started_at = '" . lc_sql_escape($started_at) . "'
+                        AND clog_duration = '{$duration}'
+                        AND clog_caller IN (" . implode(',', $caller_in) . ")
+                      ORDER BY clog_id ASC
+                      LIMIT 1 "
+                );
+                if ($content_dup) {
+                    $dup_id = (int) ($content_dup['clog_id'] ?? 0);
+                    $stored_caller = (string) ($content_dup['clog_caller'] ?? '');
+                    if ($dup_id > 0 && $caller !== '' && $stored_caller !== $caller) {
+                        lc_sql_query(
+                            " UPDATE `{$clog_table}`
+                              SET clog_caller = '" . lc_sql_escape($caller) . "'
+                              WHERE clog_id = '{$dup_id}' ",
+                            false
+                        );
+                    }
+
+                    return array(
+                        'ok'        => true,
+                        'message'   => '이미 수신된 통화입니다.',
+                        'clogId'    => $dup_id,
+                        'duplicate' => true,
+                    );
+                }
+            }
         }
 
         $assignment = lc_call_assignment_by_number($virtual_number);
@@ -2308,10 +2469,15 @@ if (!function_exists('lc_call_logs_import_parse_rows')) {
                 'importRow'     => $i + 1,
             );
 
+            // 해시 전에 번호 정규화 → 선행 0 유무가 달라도 동일 providerCallId
+            $payload['virtualNumber'] = lc_call_number_normalize($payload['virtualNumber']);
+            $payload['caller'] = lc_call_number_normalize($payload['caller']);
+            $payload['callee'] = lc_call_number_normalize($payload['callee']);
+
             if ($payload['providerCallId'] === '') {
                 // 날짜/행번호 없이 내용 해시만 사용 → 같은 통화내역 재등록 시 중복으로 처리
                 $payload['providerCallId'] = 'import-' . substr(md5(
-                    $virtual . '|' . $payload['caller'] . '|' . $payload['callee'] . '|'
+                    $payload['virtualNumber'] . '|' . $payload['caller'] . '|' . $payload['callee'] . '|'
                     . $payload['startedAt'] . '|' . $payload['duration'] . '|' . $payload['result']
                 ), 0, 16);
             }
@@ -2449,6 +2615,11 @@ if (!function_exists('lc_call_logs_import_bulk')) {
             'unmatched' => 0,
             'items'     => array(),
         );
+
+        // 기존 선행0 누락 중복을 먼저 정리해 재등록 시 충돌/잔여 중복을 줄임
+        if (function_exists('lc_call_logs_repair_caller_duplicates')) {
+            $summary['repair'] = lc_call_logs_repair_caller_duplicates(2000);
+        }
 
         foreach ($rows as $row) {
             if ($skip_conversion) {
